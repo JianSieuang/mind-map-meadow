@@ -1,0 +1,31 @@
+{
+    "name": "mind-map-meadow",
+    "version": "1.0.0",
+    "main": "server.js",
+    "type": "module",
+    "scripts": {
+        "build": "vite build",
+        "dev": "concurrently \"vite\" \"nodemon -L --watch server.js --ext js server.js\"",
+        "start": "node server.js"
+    },
+    "dependencies": {
+        "express": "^4.19.2",
+        "pg": "^8.11.5",
+        "phaser": "^3.60.0",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+        "socket.io": "^4.7.5",
+        "socket.io-client": "^4.7.5"
+    },
+    "devDependencies": {
+        "@types/react": "^18.3.3",
+        "@types/react-dom": "^18.3.0",
+        "@vitejs/plugin-react": "^4.3.1",
+        "autoprefixer": "^10.4.19",
+        "concurrently": "^8.2.2",
+        "nodemon": "^3.1.4",
+        "postcss": "^8.4.39",
+        "tailwindcss": "^3.4.4",
+        "vite": "^5.3.2"
+    }
+}

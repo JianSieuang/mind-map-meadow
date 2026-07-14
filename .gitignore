@@ -1,0 +1,20 @@
+# Local data directory volumes (DO NOT PUSH THESE)
+postgres_data/
+ollama_data/
+webui_data/
+
+# JavaScript Dependencies & Builds
+node_modules/
+dist/
+.eslintcache
+
+# Environment configurations and logs
+.env
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS specific files
+.DS_Store
+Thumbs.db
