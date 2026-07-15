@@ -20,9 +20,8 @@ export const initPhaser = (parentEl, socket, onBuildingInspect, onMapClick) => {
             preload() {},
             create() {
                 const scene = this;
-                buildingsGroup = scene.add.group();
+                window.buildingsGroup = scene.add.group(); // Set global engine scope window reference safely
 
-                // Bind UI state tracking variables directly to the scene context
                 scene.activeMenuUI = null;
                 scene.activeGroundPrompt = null;
                 scene.currentSelectedBuilding = null;
@@ -30,7 +29,7 @@ export const initPhaser = (parentEl, socket, onBuildingInspect, onMapClick) => {
                 scene.physics.world.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
                 scene.cameras.main.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
 
-                // Draw background landscape grid layout tracking lines
+                // Draw background grid landscape
                 const graphics = scene.add.graphics();
                 graphics.lineStyle(1, 0x2c7a4d, 0.8);
                 for (let x = 0; x < MAP_WIDTH; x += 48) {
@@ -43,28 +42,27 @@ export const initPhaser = (parentEl, socket, onBuildingInspect, onMapClick) => {
                 }
                 graphics.strokePath();
 
-                // 1. ADD VISUAL GRID CELL HIGHLIGHT MARKER
-                scene.gridHighlight = scene.add.rectangle(0, 0, 48, 48, 0xf1c40f, 0.25);
+                // Highlight square overlay marker framework
+                scene.gridHighlight = scene.add.rectangle(0, 0, 48, 48, 0xf1c40f, 0.2);
                 scene.gridHighlight.setStrokeStyle(2, 0xf1c40f);
                 scene.gridHighlight.setVisible(false);
 
-                inputKeys = scene.input.keyboard.addKeys({
+                window.inputKeys = scene.input.keyboard.addKeys({
                     up: Phaser.Input.Keyboard.KeyCodes[keyControls.UP],
                     down: Phaser.Input.Keyboard.KeyCodes[keyControls.DOWN],
                     left: Phaser.Input.Keyboard.KeyCodes[keyControls.LEFT],
                     right: Phaser.Input.Keyboard.KeyCodes[keyControls.RIGHT],
                 });
 
-                player = scene.add.rectangle(400, 300, 32, 48, 0x2980b9);
-                scene.physics.add.existing(player);
-                player.body.setCollideWorldBounds(true);
+                window.player = scene.add.rectangle(400, 300, 32, 48, 0x2980b9);
+                scene.physics.add.existing(window.player);
+                window.player.body.setCollideWorldBounds(true);
 
-                aiCompanion = scene.add.circle(500, 350, 20, 0xe74c3c);
-                scene.physics.add.collider(player, buildingsGroup);
+                window.aiCompanion = scene.add.circle(500, 350, 20, 0xe74c3c);
+                scene.physics.add.collider(window.player, window.buildingsGroup);
 
-                scene.cameras.main.startFollow(player, true, 0.1, 0.1);
+                scene.cameras.main.startFollow(window.player, true, 0.1, 0.1);
 
-                // Clear function helpers attached to the scene
                 scene.clearActiveMenu = () => {
                     if (scene.activeMenuUI) {
                         scene.activeMenuUI.destroy(true);
@@ -83,51 +81,46 @@ export const initPhaser = (parentEl, socket, onBuildingInspect, onMapClick) => {
                     }
                 };
 
-                // Socket Seeding Hooks
+                // Socket Event Listeners
                 socket.on("init_state", (state) => {
-                    player.setPosition(state.player.x, state.player.y);
-                    aiCompanion.setPosition(state.ai.x, state.ai.y);
-                    buildingsGroup.clear(true, true);
+                    window.player.setPosition(state.player.x, state.player.y);
+                    window.aiCompanion.setPosition(state.ai.x, state.ai.y);
+                    window.buildingsGroup.clear(true, true);
                     scene.clearActiveMenu();
                     scene.clearGroundPrompt();
                     scene.gridHighlight.setVisible(false);
                     if (state.buildings) {
-                        state.buildings.forEach((b) => renderBuilding(scene, b, onBuildingInspect, buildingsGroup, socket));
+                        state.buildings.forEach((b) => renderBuilding(scene, b, onBuildingInspect, window.buildingsGroup, socket));
                     }
                 });
 
                 socket.on("state_update", (state) => {
-                    aiCompanion.setPosition(state.ai.x, state.ai.y);
+                    window.aiCompanion.setPosition(state.ai.x, state.ai.y);
                 });
 
                 socket.on("building_spawned", (buildingData) => {
-                    renderBuilding(scene, buildingData, onBuildingInspect, buildingsGroup, socket);
+                    renderBuilding(scene, buildingData, onBuildingInspect, window.buildingsGroup, socket);
                 });
 
                 socket.on("building_moved", (data) => {
-                    const match = buildingsGroup.getChildren().find((child) => child.getData("id") === data.id);
+                    const match = window.buildingsGroup.getChildren().find((child) => child.getData("id") === data.id);
                     if (match) {
                         match.setPosition(data.x, data.y);
                         if (match.body) match.body.updateFromGameObject();
                     }
                 });
 
-                // 2. DISCRETE GRID CELL SNAP CALCULATOR DURING DRAG
+                // Snap element steps inside discrete cells while dragging
                 scene.input.on("drag", (pointer, gameObject, dragX, dragY) => {
-                    // Convert pointer location to exact matching discrete grid cell steps
                     const cellIndexX = Math.floor(dragX / 48);
                     const cellIndexY = Math.floor(dragY / 48);
-
                     const snappedGridX = cellIndexX * 48 + 24;
                     const snappedGridY = cellIndexY * 48 + 24;
 
                     gameObject.x = snappedGridX;
                     gameObject.y = snappedGridY;
-
-                    // Match highlight frame box to the dragged block grid coordinates
                     scene.gridHighlight.setPosition(snappedGridX, snappedGridY);
 
-                    // Update the layout positions of the context overlay menu targets simultaneously while dragging
                     if (scene.activeMenuUI && scene.currentSelectedBuilding === gameObject) {
                         scene.activeMenuUI.setPosition(gameObject.x, gameObject.y + 46);
                     }
@@ -144,48 +137,51 @@ export const initPhaser = (parentEl, socket, onBuildingInspect, onMapClick) => {
                         x: gameObject.x,
                         y: gameObject.y,
                     });
-
                     scene.clearActiveMenu();
                 });
 
-                // --- MAP GROUND CLICK HANDLER ---
+                // Empty Map Ground Pointer Down Handler
                 scene.input.on("pointerdown", (pointer, localObjects) => {
                     if (localObjects.some((obj) => obj.getData("isUiElement"))) return;
 
-                    // If user clicked flat, empty grass meadow area
                     if (localObjects.length === 0) {
                         scene.clearActiveMenu();
                         scene.clearGroundPrompt();
 
-                        // Map out clicked grid cell coordinates
                         const targetCellX = Math.floor(pointer.worldX / 48);
                         const targetCellY = Math.floor(pointer.worldY / 48);
                         const snapTargetX = targetCellX * 48 + 24;
                         const snapTargetY = targetCellY * 48 + 24;
 
-                        // Position highlight frame container
                         scene.gridHighlight.setPosition(snapTargetX, snapTargetY).setVisible(true);
 
-                        // Construct floating prompt anchored beneath the active cell block
+                        // --- DESIGN UPGRADE: Sleek Rounded Emerald Task Prompt Pill ---
                         scene.activeGroundPrompt = scene.add.container(snapTargetX, snapTargetY + 46);
                         scene.activeGroundPrompt.setData("isUiElement", true);
 
-                        const promptBg = scene.add.rectangle(0, 0, 160, 32, 0x2980b9, 0.95).setStrokeStyle(1.5, 0xffffff).setInteractive({ useHandCursor: true });
-                        promptBg.setData("isUiElement", true);
+                        const promptGfx = scene.add.graphics();
+                        promptGfx.fillStyle(0x059669, 0.95); // Emerald Green 600
+                        promptGfx.lineStyle(1.5, 0xffffff, 1);
+                        promptGfx.fillRoundedRect(-80, -16, 160, 32, 10);
+                        promptGfx.strokeRoundedRect(-80, -16, 160, 32, 10);
+                        promptGfx.setData("isUiElement", true);
 
                         const promptText = scene.add
-                            .text(0, 0, "+ Create New Task", {
-                                fontSize: "12px",
+                            .text(0, 0, "➕ Create New Task", {
+                                fontSize: "11px",
                                 fontFamily: "sans-serif",
                                 fontWeight: "bold",
                                 color: "#ffffff",
                             })
                             .setOrigin(0.5);
 
-                        scene.activeGroundPrompt.add([promptBg, promptText]);
+                        // Invisible interaction zone block mapped over the rounded shape boundaries
+                        const hitZone = scene.add.zone(0, 0, 160, 32).setInteractive({ useHandCursor: true });
+                        hitZone.setData("isUiElement", true);
 
-                        // Handle prompt clicks
-                        promptBg.on("pointerdown", (p, lx, ly, event) => {
+                        scene.activeGroundPrompt.add([promptGfx, promptText, hitZone]);
+
+                        hitZone.on("pointerdown", (p, lx, ly, event) => {
                             event.stopPropagation();
                             onMapClick();
                             scene.clearGroundPrompt();
@@ -199,31 +195,30 @@ export const initPhaser = (parentEl, socket, onBuildingInspect, onMapClick) => {
                 const speed = 280;
                 if (!this.input.keyboard.isActive()) return;
 
-                player.body.setVelocity(0);
+                window.player.body.setVelocity(0);
 
-                if (inputKeys.left.isDown) {
-                    player.body.setVelocityX(-speed);
+                if (window.inputKeys.left.isDown) {
+                    window.player.body.setVelocityX(-speed);
                     moved = true;
                 }
-                if (inputKeys.right.isDown) {
-                    player.body.setVelocityX(speed);
+                if (window.inputKeys.right.isDown) {
+                    window.player.body.setVelocityX(speed);
                     moved = true;
                 }
-                if (inputKeys.up.isDown) {
-                    player.body.setVelocityY(-speed);
+                if (window.inputKeys.up.isDown) {
+                    window.player.body.setVelocityY(-speed);
                     moved = true;
                 }
-                if (inputKeys.down.isDown) {
-                    player.body.setVelocityY(speed);
+                if (window.inputKeys.down.isDown) {
+                    window.player.body.setVelocityY(speed);
                     moved = true;
                 }
 
-                if (moved) socket.emit("player_move", { x: player.x, y: player.y });
+                if (moved) socket.emit("player_move", { x: window.player.x, y: window.player.y });
             },
         },
     };
 
-    let player, aiCompanion, inputKeys, buildingsGroup;
     return new Phaser.Game(config);
 };
 
@@ -235,7 +230,6 @@ function renderBuilding(scene, b, onInspect, group, socket) {
     scene.physics.add.existing(visualBox, true);
     visualBox.setInteractive({ useHandCursor: true });
 
-    // --- SELECTION MENU TRIGGER ON CLICK ---
     visualBox.on("pointerdown", (pointer, localX, localY, event) => {
         event.stopPropagation();
 
@@ -243,39 +237,48 @@ function renderBuilding(scene, b, onInspect, group, socket) {
         scene.clearActiveMenu();
 
         scene.currentSelectedBuilding = visualBox;
-        visualBox.setStrokeStyle(3, 0xf1c40f); // Draw golden selection ring
+        visualBox.setStrokeStyle(3, 0xf1c40f);
 
         onInspect(b.id);
 
-        // Instantiate overlay box buttons cleanly using direct scene variable states
+        // --- DESIGN UPGRADE: Unified Rounded Action Submenus ---
         const menuContainer = scene.add.container(visualBox.x, visualBox.y + 46);
         menuContainer.setData("isUiElement", true);
 
-        const moveBtn = scene.add.rectangle(-45, 0, 75, 26, 0x27ae60).setStrokeStyle(1, 0xffffff).setInteractive({ useHandCursor: true });
-        moveBtn.setData("isUiElement", true);
-        const moveText = scene.add.text(-45, 0, "🚚 Move", { fontSize: "11px", fontFamily: "sans-serif", fontWeight: "bold", color: "#fff" }).setOrigin(0.5);
+        // Move Button Pill Setup
+        const moveGfx = scene.add.graphics();
+        moveGfx.fillStyle(0x2563eb, 0.95); // Royal Blue 600
+        moveGfx.lineStyle(1, 0xffffff, 1);
+        moveGfx.fillRoundedRect(-80, -13, 76, 26, 8);
+        moveGfx.strokeRoundedRect(-80, -13, 76, 26, 8);
+        const moveText = scene.add.text(-42, 0, "🚚 Move", { fontSize: "11px", fontFamily: "sans-serif", fontWeight: "bold", color: "#fff" }).setOrigin(0.5);
+        const moveZone = scene.add.zone(-42, 0, 76, 26).setInteractive({ useHandCursor: true });
+        moveZone.setData("isUiElement", true);
 
-        const cancelBtn = scene.add.rectangle(45, 0, 75, 26, 0xc0392b).setStrokeStyle(1, 0xffffff).setInteractive({ useHandCursor: true });
-        cancelBtn.setData("isUiElement", true);
-        const cancelText = scene.add.text(45, 0, "❌ Close", { fontSize: "11px", fontFamily: "sans-serif", fontWeight: "bold", color: "#fff" }).setOrigin(0.5);
+        // Cancel Button Pill Setup
+        const cancelGfx = scene.add.graphics();
+        cancelGfx.fillStyle(0xd97706, 0.95); // Amber/Orange 600
+        cancelGfx.lineStyle(1, 0xffffff, 1);
+        cancelGfx.fillRoundedRect(4, -13, 76, 26, 8);
+        cancelGfx.strokeRoundedRect(4, -13, 76, 26, 8);
+        const cancelText = scene.add.text(42, 0, "❌ Close", { fontSize: "11px", fontFamily: "sans-serif", fontWeight: "bold", color: "#fff" }).setOrigin(0.5);
+        const cancelZone = scene.add.zone(42, 0, 76, 26).setInteractive({ useHandCursor: true });
+        cancelZone.setData("isUiElement", true);
 
-        menuContainer.add([moveBtn, moveText, cancelBtn, cancelText]);
+        menuContainer.add([moveGfx, moveText, moveZone, cancelGfx, cancelText, cancelZone]);
         scene.activeMenuUI = menuContainer;
 
-        moveBtn.on("pointerdown", (p, lx, ly, btnEvent) => {
+        moveZone.on("pointerdown", (p, lx, ly, btnEvent) => {
             btnEvent.stopPropagation();
             visualBox.setAlpha(0.65);
-
-            // Display grid highlight boundary area explicitly under the element
             scene.gridHighlight.setPosition(visualBox.x, visualBox.y).setVisible(true);
 
             visualBox.setInteractive({ draggable: true });
             scene.input.setDraggable(visualBox);
-
             menuContainer.setAlpha(0.2);
         });
 
-        cancelBtn.on("pointerdown", (p, lx, ly, btnEvent) => {
+        cancelZone.on("pointerdown", (p, lx, ly, btnEvent) => {
             btnEvent.stopPropagation();
             scene.clearActiveMenu();
             scene.gridHighlight.setVisible(false);

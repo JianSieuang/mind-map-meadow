@@ -4,7 +4,7 @@ services:
             - ./ollama_data:/root/.ollama
         container_name: local-ollama
         ports:
-            - "11434:11434"
+            - "${OLLAMA_PORT}:11434"
         image: ollama/ollama:latest
         restart: unless-stopped
         deploy:
@@ -15,29 +15,16 @@ services:
                           count: all
                           capabilities: [gpu]
 
-    open-webui:
-        image: ghcr.io/open-webui/open-webui:main
-        container_name: local-webui
-        ports:
-            - "3000:8080"
-        environment:
-            - OLLAMA_BASE_URL=http://ollama:11434
-        volumes:
-            - ./webui_data:/app/backend/data
-        restart: unless-stopped
-        depends_on:
-            - ollama
-
     mind-map-meadow:
         build:
             context: ./mind-map-meadow
             dockerfile: Dockerfile
         container_name: game-meadow
         ports:
-            - "5000:5000"
-            - "5173:5173"
+            - "${GAME_SERVER_PORT}:5000"
+            - "${VITE_DEV_PORT}:5173"
         environment:
-            - DATABASE_URL=postgres://chong:secret_password@postgres-db:5432/mind_map_meadow
+            - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB}
             - VITE_WATCH=true
         volumes:
             - ./mind-map-meadow:/app
@@ -53,21 +40,20 @@ services:
         image: pgvector/pgvector:pg16
         container_name: meadow-db
         environment:
-            POSTGRES_USER: chong
-            POSTGRES_PASSWORD: secret_password
-            POSTGRES_DB: mind_map_meadow
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
         volumes:
             - ./postgres_data:/var/lib/postgresql/data
-            - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
         ports:
-            - "5432:5432"
+            - "${POSTGRES_PORT}:5432"
         restart: unless-stopped
 
     db-viewer:
         image: adminer:latest
         container_name: meadow-db-viewer
         ports:
-            - "8082:8080"
+            - "${DB_VIEWER_PORT}:8080"
         restart: unless-stopped
         depends_on:
             - postgres-db

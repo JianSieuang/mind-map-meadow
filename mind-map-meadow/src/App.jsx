@@ -10,8 +10,12 @@ export default function App() {
 
     const [stats, setStats] = useState({ level: 1, coins: 0, calories_burned: 0 });
     const [tasks, setTasks] = useState([]);
-    const [inspectedContent, setInspectedContent] = useState("Click a building on the map to open its control action menu and view performance metrics!");
     const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // HUD Inspection Target Variable Mappings
+    const [selectedBuildingId, setSelectedBuildingId] = useState(null);
+    const [selectedBuildingData, setSelectedBuildingData] = useState(null);
+    const [aiThought, setAiThought] = useState("Awaiting model data synchronization pass...");
 
     const [formTitle, setFormTitle] = useState("");
     const [formCategory, setFormCategory] = useState("Coding");
@@ -23,10 +27,13 @@ export default function App() {
                 gameContainerRef.current,
                 socket,
                 (id) => {
+                    setSelectedBuildingId(id);
                     socket.emit("inspect_building", id);
                 },
                 () => {
-                    setIsModalOpen(true); // Fired cleanly when the floating grass text prompt is clicked
+                    setSelectedBuildingId(null);
+                    setSelectedBuildingData(null);
+                    setIsModalOpen(true); // Fired directly through Phaser's upgraded rounded pill handler!
                 },
             );
         }
@@ -42,13 +49,18 @@ export default function App() {
         });
 
         socket.on("inspection_details", (content) => {
-            setInspectedContent(content);
+            setSelectedBuildingData(content);
+        });
+
+        socket.on("ai_thought_broadcast", (data) => {
+            setAiThought(data.thought);
         });
 
         return () => {
             socket.off("init_state");
             socket.off("refresh_data");
             socket.off("inspection_details");
+            socket.off("ai_thought_broadcast");
         };
     }, []);
 
@@ -60,8 +72,6 @@ export default function App() {
         if (isModalOpen) {
             scene.input.keyboard.disableGlobalCapture();
             scene.input.keyboard.resetKeys();
-            const playerBody = scene.children.list.find((obj) => obj.body);
-            if (playerBody && playerBody.body) playerBody.body.setVelocity(0);
         } else {
             scene.input.keyboard.enableGlobalCapture();
         }
@@ -79,13 +89,28 @@ export default function App() {
     };
 
     return (
-        <div className="w-screen h-screen bg-[#1e1e24] overflow-hidden select-none">
+        <div className="w-screen h-screen bg-[#1e1e24] overflow-hidden select-none font-sans">
             <div id="master-container" className="relative w-full h-full">
-                {/* Unified Game Viewport Anchor */}
+                {/* Full Screen Viewport Core Game Canvas Anchor */}
                 <div ref={gameContainerRef} id="game-container" className="absolute inset-0 w-full h-full z-10"></div>
 
-                {/* Floating Sidebar HUD HUD Layer Container Control Wrapper */}
-                <div id="sidebar" className="absolute top-20 right-6 z-20 w-[340px] max-h-[calc(100vh-6rem)] p-4 flex flex-col gap-4 rounded-xl bg-[#23232e]/90 backdrop-blur-md border border-slate-700/60 shadow-2xl overflow-y-auto">
+                {/* Floating Building Specification Card (Optional fallback display) */}
+                {selectedBuildingId && selectedBuildingData && (
+                    <div className="absolute bottom-6 left-6 z-30 w-[300px] bg-[#23232e]/95 backdrop-blur-md border border-slate-700 p-4 rounded-xl shadow-2xl animate-in fade-in duration-200">
+                        <h3 className="text-xs font-bold text-yellow-500 uppercase tracking-wide mb-1">Structure Stats</h3>
+                        <div className="text-xs text-slate-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: selectedBuildingData }}></div>
+                    </div>
+                )}
+
+                {/* Main Status HUD Sidebar Control Dashboard Container */}
+                <div id="sidebar" className="absolute top-6 right-6 z-20 w-[340px] max-h-[calc(100vh-8rem)] p-4 flex flex-col gap-4 rounded-xl bg-[#23232e]/90 backdrop-blur-md border border-slate-700/60 shadow-2xl overflow-y-auto">
+                    <div className="bg-gradient-to-br from-indigo-900/60 to-purple-900/40 border border-indigo-500/30 p-3.5 rounded-xl shadow-inner">
+                        <h3 className="text-[11px] uppercase tracking-wider text-indigo-300 font-bold mb-1 flex items-center gap-1">
+                            <span className="animate-pulse text-rose-400">🔴</span> Llama 3 Companion Brain
+                        </h3>
+                        <p className="text-xs text-slate-200 font-medium leading-relaxed italic">"{aiThought}"</p>
+                    </div>
+
                     <div className="flex gap-3">
                         <div className="flex-1 bg-[#2a2a35] p-2.5 rounded-lg text-center border border-slate-700">
                             <h4 className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">Level</h4>
@@ -101,16 +126,9 @@ export default function App() {
                         </div>
                     </div>
 
-                    <div>
-                        <h3 className="text-xs font-bold tracking-wide border-b border-slate-700 pb-1 mb-1.5 text-slate-200 flex items-center gap-1">🔍 Inspected Structure</h3>
-                        <div className="bg-[#1b1b22] p-3 rounded-lg border border-slate-700/80 min-h-[75px]">
-                            <div className="text-xs text-slate-400 leading-relaxed" dangerouslySetInnerHTML={{ __html: inspectedContent }}></div>
-                        </div>
-                    </div>
-
                     <div className="flex flex-col min-h-0">
                         <h3 className="text-xs font-bold tracking-wide border-b border-slate-700 pb-1 mb-1.5 text-slate-200 flex items-center gap-1">📅 Active Agenda</h3>
-                        <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto pr-1">
+                        <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-1">
                             {tasks
                                 .filter((t) => t.status === "pending")
                                 .map((task) => (
@@ -124,12 +142,13 @@ export default function App() {
                                         </button>
                                     </div>
                                 ))}
+                            {tasks.filter((t) => t.status === "pending").length === 0 && <p className="text-[11px] text-slate-500 text-center py-4 italic">Meadow clear! Click grass to add goals.</p>}
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Task Initialization Input Form Sheet Popup */}
+            {/* Goal Generation Modal Form Container Box */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-50 transition-opacity">
                     <div className="bg-[#2a2a35] w-[380px] p-5 rounded-xl border border-slate-600 shadow-2xl flex flex-col gap-3.5">
@@ -142,11 +161,11 @@ export default function App() {
                         <form onSubmit={handleCreateTask} className="flex flex-col gap-3">
                             <div className="flex flex-col gap-0.5">
                                 <label className="text-[11px] text-slate-400 font-semibold">Goal Description</label>
-                                <input type="text" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="e.g., Complete Unity blueprints" required className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none" />
+                                <input type="text" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="e.g., Complete Unity blueprints" required className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500" />
                             </div>
                             <div className="flex flex-col gap-0.5">
                                 <label className="text-[11px] text-slate-400 font-semibold">Category Type</label>
-                                <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none">
+                                <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500">
                                     <option value="Coding">💻 Coding Assignment</option>
                                     <option value="Fitness">🏋️ Fitness Exercise</option>
                                     <option value="Finance">💰 Expense Record</option>
@@ -154,7 +173,7 @@ export default function App() {
                             </div>
                             <div className="flex flex-col gap-0.5">
                                 <label className="text-[11px] text-slate-400 font-semibold">Target Deadline</label>
-                                <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} required className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none" />
+                                <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} required className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500" />
                             </div>
                             <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg text-xs shadow transition mt-1">
                                 Log to Database
