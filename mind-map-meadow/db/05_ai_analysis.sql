@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS ai_analysis;
-
 -- Local AI Narrative Vector Memory Table 
 CREATE TABLE IF NOT EXISTS ai_analysis (
     id SERIAL PRIMARY KEY,
