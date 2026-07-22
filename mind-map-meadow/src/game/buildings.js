@@ -23,6 +23,12 @@ export function renderBuilding(scene, b, onInspect, group, socket) {
         if (b.metadata.alpha) elementSprite.setAlpha(b.metadata.alpha);
     }
 
+    if (scene.minimapCamera) {
+        const blip = scene.add.circle(b.x, b.y, 60, 0xfbbf24).setStrokeStyle(12, 0xffffff, 0.9).setDepth(9998);
+        scene.cameras.main.ignore(blip);
+        elementSprite.setData("minimapBlip", blip);
+    }
+
     elementSprite.setInteractive({ useHandCursor: true });
 
     elementSprite.on("pointerdown", (pointer, localX, localY, event) => {
@@ -56,6 +62,7 @@ export function renderBuilding(scene, b, onInspect, group, socket) {
         cancelZone.setData("isUiElement", true);
 
         menuContainer.add([moveGfx, moveText, moveZone, cancelGfx, cancelText, cancelZone]);
+        if (scene.minimapCamera) scene.minimapCamera.ignore(menuContainer);
         scene.activeMenuUI = menuContainer;
 
         moveZone.on("pointerdown", (p, lx, ly, btnEvent) => {

@@ -5,6 +5,12 @@ export const MAP_CONFIG = {
     PLAYER_SPEED: 280,
 };
 
+export const MINIMAP_CONFIG = {
+    WIDTH: 180,
+    HEIGHT: 128,
+    MARGIN: 16,
+};
+
 export const KEY_CONTROLS = {
     UP: "W",
     DOWN: "S",

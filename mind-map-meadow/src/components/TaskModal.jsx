@@ -1,16 +1,11 @@
-import React, { useState } from "react";
+import React from "react";
+import TaskForm from "./TaskForm";
 
 export default function TaskModal({ isOpen, onClose, onCreateTask }) {
     if (!isOpen) return null;
 
-    const [title, setTitle] = useState("");
-    const [category, setCategory] = useState("Coding");
-    const [date, setDate] = useState("");
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        onCreateTask({ title, category, date });
-        setTitle("");
+    const handleSubmit = (values) => {
+        onCreateTask(values);
         onClose();
     };
 
@@ -23,27 +18,7 @@ export default function TaskModal({ isOpen, onClose, onCreateTask }) {
                         &times;
                     </button>
                 </div>
-                <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-                    <div className="flex flex-col gap-0.5">
-                        <label className="text-[11px] text-slate-400 font-semibold">Goal Description</label>
-                        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Complete Unity blueprints" required className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500" />
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                        <label className="text-[11px] text-slate-400 font-semibold">Category Type</label>
-                        <select value={category} onChange={(e) => setCategory(e.target.value)} className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500">
-                            <option value="Coding">💻 Coding Assignment</option>
-                            <option value="Fitness">🏋️ Fitness Exercise</option>
-                            <option value="Finance">💰 Expense Record</option>
-                        </select>
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                        <label className="text-[11px] text-slate-400 font-semibold">Target Deadline</label>
-                        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500" />
-                    </div>
-                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg text-xs shadow transition mt-1">
-                        Log to Database
-                    </button>
-                </form>
+                <TaskForm onSubmit={handleSubmit} onCancel={onClose} submitLabel="Log to Database" />
             </div>
         </div>
     );

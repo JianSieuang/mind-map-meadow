@@ -42,19 +42,28 @@ setInterval(() => {
     }
 }, 33);
 
-io.on("connection", async (socket) => {
-    const buildingsResult = await pool.query("SELECT * FROM buildings");
-    const statsResult = await pool.query("SELECT * FROM player_stats WHERE username = 'chong' LIMIT 1");
-    const tasksResult = await pool.query("SELECT * FROM tasks");
+io.on("connection", (socket) => {
+    // The client requests this once its Phaser scene has finished preloading and is
+    // actually listening — pushing it eagerly on connect races against that preload
+    // and can drop the buildings payload if the scene isn't ready yet.
+    socket.on("request_init_state", async () => {
+        try {
+            const buildingsResult = await pool.query("SELECT * FROM buildings");
+            const statsResult = await pool.query("SELECT * FROM player_stats WHERE username = 'chong' LIMIT 1");
+            const tasksResult = await pool.query("SELECT * FROM tasks ORDER BY due_date ASC, id ASC");
 
-    socket.emit("init_state", {
-        player: gameContext.playerPos,
-        ai: gameContext.aiPos,
-        buildings: buildingsResult.rows,
-        stats: statsResult.rows[0],
-        tasks: tasksResult.rows,
+            socket.emit("init_state", {
+                player: gameContext.playerPos,
+                ai: gameContext.aiPos,
+                buildings: buildingsResult.rows,
+                stats: statsResult.rows[0],
+                tasks: tasksResult.rows,
+            });
+            socket.emit("ai_thought_broadcast", { thought: gameContext.aiCurrentThought });
+        } catch (err) {
+            console.error("❌ [Init State Error]:", err.message);
+        }
     });
-    socket.emit("ai_thought_broadcast", { thought: gameContext.aiCurrentThought });
 
     registerSocketEvents(io, socket, gameContext);
 });

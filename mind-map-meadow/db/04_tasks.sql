@@ -10,3 +10,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     due_date DATE NOT NULL,
     completed_at TIMESTAMP DEFAULT NULL
 );
+
+-- Estimated effort (minutes) used to compute the coin reward on completion
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS estimated_minutes INTEGER NOT NULL DEFAULT 30;
