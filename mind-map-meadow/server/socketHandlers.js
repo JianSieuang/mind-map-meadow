@@ -1,11 +1,19 @@
 import { pool } from "./db.js";
 import { triggerLlamaBrainDecision } from "./aiBrain.js";
 import { computeTaskReward, applyLevelUp } from "./rewards.js";
+import { generateTodayInstances } from "./recurringTasks.js";
+
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 async function emitRefreshData(io) {
     const freshStats = await pool.query("SELECT * FROM player_stats WHERE username = 'chong' LIMIT 1");
     const allTasks = await pool.query("SELECT * FROM tasks ORDER BY due_date ASC, id ASC");
     io.emit("refresh_data", { stats: freshStats.rows[0], tasks: allTasks.rows });
+}
+
+async function emitRefreshRecurringTasks(io) {
+    const recurringTasks = await pool.query("SELECT * FROM recurring_tasks ORDER BY id ASC");
+    io.emit("refresh_recurring_tasks", { recurringTasks: recurringTasks.rows });
 }
 
 export function registerSocketEvents(io, socket, gameContext) {
@@ -99,6 +107,61 @@ export function registerSocketEvents(io, socket, gameContext) {
             await emitRefreshData(io);
         } catch (err) {
             console.error("❌ [Delete Task Error]:", err.message);
+        }
+    });
+
+    socket.on("add_recurring_task", async ({ title, category, estimated_minutes, days_of_week, start_time, end_time }) => {
+        try {
+            await pool.query(`INSERT INTO recurring_tasks (title, category, estimated_minutes, days_of_week, start_time, end_time) VALUES ($1, $2, $3, $4, $5, $6)`, [
+                title,
+                category,
+                estimated_minutes || 30,
+                days_of_week && days_of_week.length ? days_of_week : ALL_DAYS,
+                start_time || "07:00",
+                end_time || "08:00",
+            ]);
+            await generateTodayInstances();
+            await emitRefreshRecurringTasks(io);
+            await emitRefreshData(io);
+        } catch (err) {
+            console.error("❌ [Add Recurring Task Error]:", err.message);
+        }
+    });
+
+    socket.on("edit_recurring_task", async ({ id, title, category, estimated_minutes, days_of_week, start_time, end_time }) => {
+        try {
+            await pool.query(`UPDATE recurring_tasks SET title = $1, category = $2, estimated_minutes = $3, days_of_week = $4, start_time = $5, end_time = $6 WHERE id = $7`, [
+                title,
+                category,
+                estimated_minutes || 30,
+                days_of_week && days_of_week.length ? days_of_week : ALL_DAYS,
+                start_time || "07:00",
+                end_time || "08:00",
+                id,
+            ]);
+            await emitRefreshRecurringTasks(io);
+        } catch (err) {
+            console.error("❌ [Edit Recurring Task Error]:", err.message);
+        }
+    });
+
+    socket.on("toggle_recurring_task", async ({ id, active }) => {
+        try {
+            await pool.query(`UPDATE recurring_tasks SET active = $1 WHERE id = $2`, [active, id]);
+            if (active) await generateTodayInstances();
+            await emitRefreshRecurringTasks(io);
+            await emitRefreshData(io);
+        } catch (err) {
+            console.error("❌ [Toggle Recurring Task Error]:", err.message);
+        }
+    });
+
+    socket.on("delete_recurring_task", async (id) => {
+        try {
+            await pool.query("DELETE FROM recurring_tasks WHERE id = $1", [id]);
+            await emitRefreshRecurringTasks(io);
+        } catch (err) {
+            console.error("❌ [Delete Recurring Task Error]:", err.message);
         }
     });
 

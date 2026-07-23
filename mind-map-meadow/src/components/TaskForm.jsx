@@ -1,17 +1,34 @@
 import React, { useState } from "react";
-import { estimateTaskReward, DURATION_OPTIONS } from "../utils/rewards";
+import { estimateTaskReward } from "../utils/rewards";
+import { DURATION_UNITS, minutesFromDuration, dueDateFromDuration, durationFromMinutes } from "../utils/duration";
 
 export default function TaskForm({ initialValues, onSubmit, onCancel, submitLabel = "Save" }) {
+    const initialDuration = initialValues?.estimated_minutes ? durationFromMinutes(initialValues.estimated_minutes) : { amount: 1, unit: "hours" };
+
     const [title, setTitle] = useState(initialValues?.title || "");
     const [category, setCategory] = useState(initialValues?.category || "Coding");
-    const [date, setDate] = useState(initialValues?.due_date || "");
-    const [estimatedMinutes, setEstimatedMinutes] = useState(initialValues?.estimated_minutes || 30);
+    const [durationAmount, setDurationAmount] = useState(initialDuration.amount);
+    const [durationUnit, setDurationUnit] = useState(initialDuration.unit);
+    const [date, setDate] = useState(initialValues?.due_date || dueDateFromDuration(initialDuration.amount, initialDuration.unit));
+    const [dateManuallySet, setDateManuallySet] = useState(!!initialValues?.due_date);
 
+    const estimatedMinutes = minutesFromDuration(durationAmount, durationUnit);
     const reward = estimateTaskReward(estimatedMinutes, date);
+
+    const handleDurationChange = (amount, unit) => {
+        setDurationAmount(amount);
+        setDurationUnit(unit);
+        if (!dateManuallySet) setDate(dueDateFromDuration(amount, unit));
+    };
+
+    const handleDateChange = (value) => {
+        setDate(value);
+        setDateManuallySet(true);
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onSubmit({ title, category, date, estimatedMinutes: Number(estimatedMinutes) });
+        onSubmit({ title, category, date, estimatedMinutes });
     };
 
     return (
@@ -28,29 +45,37 @@ export default function TaskForm({ initialValues, onSubmit, onCancel, submitLabe
                 />
             </div>
 
-            <div className="flex gap-2">
-                <div className="flex-1 flex flex-col gap-0.5">
-                    <label className="text-[11px] text-slate-400 font-semibold">Category</label>
+            <div className="flex flex-col gap-0.5">
+                <label className="text-[11px] text-slate-400 font-semibold">Category</label>
+                <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500"
+                >
+                    <option value="Coding">💻 Coding</option>
+                    <option value="Fitness">🏋️ Fitness</option>
+                    <option value="Finance">💰 Finance</option>
+                </select>
+            </div>
+
+            <div className="flex flex-col gap-0.5">
+                <label className="text-[11px] text-slate-400 font-semibold">Target Duration</label>
+                <div className="flex gap-2">
+                    <input
+                        type="number"
+                        min="1"
+                        value={durationAmount}
+                        onChange={(e) => handleDurationChange(e.target.value, durationUnit)}
+                        className="w-20 p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500"
+                    />
                     <select
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value)}
-                        className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500"
+                        value={durationUnit}
+                        onChange={(e) => handleDurationChange(durationAmount, e.target.value)}
+                        className="flex-1 p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500"
                     >
-                        <option value="Coding">💻 Coding</option>
-                        <option value="Fitness">🏋️ Fitness</option>
-                        <option value="Finance">💰 Finance</option>
-                    </select>
-                </div>
-                <div className="flex-1 flex flex-col gap-0.5">
-                    <label className="text-[11px] text-slate-400 font-semibold">Est. Duration</label>
-                    <select
-                        value={estimatedMinutes}
-                        onChange={(e) => setEstimatedMinutes(e.target.value)}
-                        className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500"
-                    >
-                        {DURATION_OPTIONS.map((opt) => (
-                            <option key={opt.minutes} value={opt.minutes}>
-                                {opt.label}
+                        {DURATION_UNITS.map((u) => (
+                            <option key={u.value} value={u.value}>
+                                {u.label}
                             </option>
                         ))}
                     </select>
@@ -58,11 +83,13 @@ export default function TaskForm({ initialValues, onSubmit, onCancel, submitLabe
             </div>
 
             <div className="flex flex-col gap-0.5">
-                <label className="text-[11px] text-slate-400 font-semibold">Deadline</label>
+                <label className="text-[11px] text-slate-400 font-semibold">
+                    Deadline {!dateManuallySet && <span className="text-slate-600 normal-case font-normal">(auto-set from duration)</span>}
+                </label>
                 <input
                     type="date"
                     value={date}
-                    onChange={(e) => setDate(e.target.value)}
+                    onChange={(e) => handleDateChange(e.target.value)}
                     required
                     className="p-2 rounded-lg border border-slate-700 bg-[#1e1e24] text-white text-xs focus:outline-none focus:border-blue-500"
                 />

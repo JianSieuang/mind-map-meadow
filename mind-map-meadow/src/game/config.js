@@ -8,7 +8,8 @@ export const MAP_CONFIG = {
 export const MINIMAP_CONFIG = {
     WIDTH: 180,
     HEIGHT: 128,
-    MARGIN: 16,
+    MARGIN_TOP: 16,
+    MARGIN_LEFT: 100, // leaves clear room for the toggle icon (16px + 44px + generous gap) to its left
 };
 
 export const KEY_CONTROLS = {

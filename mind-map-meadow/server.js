@@ -10,6 +10,7 @@ import { pool } from "./server/db.js";
 import { runMigrations } from "./db/index.js";
 import { registerSocketEvents } from "./server/socketHandlers.js";
 import { triggerLlamaBrainDecision } from "./server/aiBrain.js";
+import { generateTodayInstances } from "./server/recurringTasks.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -51,6 +52,7 @@ io.on("connection", (socket) => {
             const buildingsResult = await pool.query("SELECT * FROM buildings");
             const statsResult = await pool.query("SELECT * FROM player_stats WHERE username = 'chong' LIMIT 1");
             const tasksResult = await pool.query("SELECT * FROM tasks ORDER BY due_date ASC, id ASC");
+            const recurringTasksResult = await pool.query("SELECT * FROM recurring_tasks ORDER BY id ASC");
 
             socket.emit("init_state", {
                 player: gameContext.playerPos,
@@ -58,6 +60,7 @@ io.on("connection", (socket) => {
                 buildings: buildingsResult.rows,
                 stats: statsResult.rows[0],
                 tasks: tasksResult.rows,
+                recurringTasks: recurringTasksResult.rows,
             });
             socket.emit("ai_thought_broadcast", { thought: gameContext.aiCurrentThought });
         } catch (err) {
@@ -72,9 +75,15 @@ io.on("connection", (socket) => {
 setInterval(() => triggerLlamaBrainDecision(io, gameContext), 60000); // Main loop
 setTimeout(() => triggerLlamaBrainDecision(io, gameContext), 5000); // Initialization grace window
 
+// ⚡ DAILY GOAL PLANNER: turn recurring_tasks templates into today's task rows.
+// Runs at boot and hourly rather than exactly at midnight — cheap no-op if
+// today's instances already exist, so the imprecise timing doesn't matter.
+setInterval(() => generateTodayInstances(), 60 * 60 * 1000);
+
 async function initializeApp() {
     try {
         await runMigrations(pool);
+        await generateTodayInstances();
         server.listen(PORT, "0.0.0.0", () => {
             console.log(`🚀 Modular ESM Game Server online at http://localhost:${PORT}`);
         });

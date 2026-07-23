@@ -47,9 +47,9 @@ export class MeadowScene extends Phaser.Scene {
         scene.cameras.main.setBounds(0, 0, MAP_CONFIG.WIDTH, MAP_CONFIG.HEIGHT);
 
         // ── Minimap camera: a second camera zoomed out to show the whole world ──
-        const minimapZoom = Math.min(MINIMAP_CONFIG.WIDTH / MAP_CONFIG.WIDTH, MINIMAP_CONFIG.HEIGHT / MAP_CONFIG.HEIGHT);
-        scene.minimapCamera = scene.cameras.add(MINIMAP_CONFIG.MARGIN, MINIMAP_CONFIG.MARGIN, MINIMAP_CONFIG.WIDTH, MINIMAP_CONFIG.HEIGHT);
-        scene.minimapCamera.setZoom(minimapZoom);
+        scene.minimapZoom = Math.min(MINIMAP_CONFIG.WIDTH / MAP_CONFIG.WIDTH, MINIMAP_CONFIG.HEIGHT / MAP_CONFIG.HEIGHT);
+        scene.minimapCamera = scene.cameras.add(MINIMAP_CONFIG.MARGIN_LEFT, MINIMAP_CONFIG.MARGIN_TOP, MINIMAP_CONFIG.WIDTH, MINIMAP_CONFIG.HEIGHT);
+        scene.minimapCamera.setZoom(scene.minimapZoom);
         scene.minimapCamera.centerOn(MAP_CONFIG.WIDTH / 2, MAP_CONFIG.HEIGHT / 2);
         scene.minimapCamera.setBackgroundColor(0x0f2818);
         scene.minimapCamera.setName("minimap");
@@ -63,21 +63,21 @@ export class MeadowScene extends Phaser.Scene {
         const padBottom = 24; // extra room at the bottom for the label badge
         scene.minimapFrame = scene.add.graphics().setScrollFactor(0).setDepth(9997);
         scene.minimapFrame.fillStyle(0x000000, 0.35);
-        scene.minimapFrame.fillRoundedRect(MINIMAP_CONFIG.MARGIN - padX + 2, MINIMAP_CONFIG.MARGIN - padTop + 3, MINIMAP_CONFIG.WIDTH + padX * 2, MINIMAP_CONFIG.HEIGHT + padTop + padBottom, 14);
+        scene.minimapFrame.fillRoundedRect(MINIMAP_CONFIG.MARGIN_LEFT - padX + 2, MINIMAP_CONFIG.MARGIN_TOP - padTop + 3, MINIMAP_CONFIG.WIDTH + padX * 2, MINIMAP_CONFIG.HEIGHT + padTop + padBottom, 14);
         scene.minimapFrame.fillStyle(0x141a1e, 0.95);
-        scene.minimapFrame.fillRoundedRect(MINIMAP_CONFIG.MARGIN - padX, MINIMAP_CONFIG.MARGIN - padTop, MINIMAP_CONFIG.WIDTH + padX * 2, MINIMAP_CONFIG.HEIGHT + padTop + padBottom, 14);
+        scene.minimapFrame.fillRoundedRect(MINIMAP_CONFIG.MARGIN_LEFT - padX, MINIMAP_CONFIG.MARGIN_TOP - padTop, MINIMAP_CONFIG.WIDTH + padX * 2, MINIMAP_CONFIG.HEIGHT + padTop + padBottom, 14);
         scene.minimapFrame.lineStyle(2, 0xf1c40f, 0.85);
-        scene.minimapFrame.strokeRoundedRect(MINIMAP_CONFIG.MARGIN - padX, MINIMAP_CONFIG.MARGIN - padTop, MINIMAP_CONFIG.WIDTH + padX * 2, MINIMAP_CONFIG.HEIGHT + padTop + padBottom, 14);
+        scene.minimapFrame.strokeRoundedRect(MINIMAP_CONFIG.MARGIN_LEFT - padX, MINIMAP_CONFIG.MARGIN_TOP - padTop, MINIMAP_CONFIG.WIDTH + padX * 2, MINIMAP_CONFIG.HEIGHT + padTop + padBottom, 14);
         scene.minimapCamera.ignore(scene.minimapFrame);
 
         scene.minimapLabelBadge = scene.add
-            .rectangle(MINIMAP_CONFIG.MARGIN + MINIMAP_CONFIG.WIDTH / 2, MINIMAP_CONFIG.MARGIN + MINIMAP_CONFIG.HEIGHT + 10, MINIMAP_CONFIG.WIDTH - 20, 16, 0xf1c40f, 0.95)
+            .rectangle(MINIMAP_CONFIG.MARGIN_LEFT + MINIMAP_CONFIG.WIDTH / 2, MINIMAP_CONFIG.MARGIN_TOP + MINIMAP_CONFIG.HEIGHT + 10, MINIMAP_CONFIG.WIDTH - 20, 16, 0xf1c40f, 0.95)
             .setScrollFactor(0)
             .setDepth(9998);
         scene.minimapCamera.ignore(scene.minimapLabelBadge);
 
         scene.minimapLabel = scene.add
-            .text(MINIMAP_CONFIG.MARGIN + MINIMAP_CONFIG.WIDTH / 2, MINIMAP_CONFIG.MARGIN + MINIMAP_CONFIG.HEIGHT + 10, "🗺 MEADOW MAP", {
+            .text(MINIMAP_CONFIG.MARGIN_LEFT + MINIMAP_CONFIG.WIDTH / 2, MINIMAP_CONFIG.MARGIN_TOP + MINIMAP_CONFIG.HEIGHT + 10, "🗺 MEADOW MAP", {
                 fontSize: "9px",
                 fontFamily: "sans-serif",
                 fontWeight: "bold",
@@ -91,6 +91,42 @@ export class MeadowScene extends Phaser.Scene {
         // Rectangle showing the main camera's visible viewport, drawn only on the minimap
         scene.minimapViewportRect = scene.add.rectangle(0, 0, 10, 10).setStrokeStyle(1, 0xffffff, 0.85).setFillStyle(0, 0).setDepth(9999);
         scene.cameras.main.ignore(scene.minimapViewportRect);
+
+        // Invisible drag-to-pan zone sitting exactly over the minimap's fixed screen rect.
+        // Dragging it pans the main camera around the world without moving the player;
+        // pressing a movement key afterward snaps the camera back to following the player.
+        scene.isFreeLook = false;
+        scene.minimapDragZone = scene.add
+            .zone(MINIMAP_CONFIG.MARGIN_LEFT + MINIMAP_CONFIG.WIDTH / 2, MINIMAP_CONFIG.MARGIN_TOP + MINIMAP_CONFIG.HEIGHT / 2, MINIMAP_CONFIG.WIDTH, MINIMAP_CONFIG.HEIGHT)
+            .setScrollFactor(0)
+            .setInteractive({ draggable: true, useHandCursor: true });
+        scene.minimapDragZone.setData("isUiElement", true);
+        scene.input.setDraggable(scene.minimapDragZone);
+
+        scene.minimapDragZone.on("pointerdown", () => {
+            scene.isFreeLook = true;
+            scene.cameras.main.stopFollow();
+        });
+
+        scene.minimapVisible = false;
+
+        // When closed, the drag zone is fully disabled so that screen corner behaves like
+        // normal grass again (clickable for task creation) instead of an inert dead spot.
+        scene.toggleMinimap = (visible) => {
+            scene.minimapVisible = visible;
+            scene.minimapCamera.setVisible(visible);
+            scene.minimapFrame.setVisible(visible);
+            scene.minimapLabelBadge.setVisible(visible);
+            scene.minimapLabel.setVisible(visible);
+            if (visible) {
+                scene.minimapDragZone.setInteractive({ draggable: true, useHandCursor: true });
+                scene.input.setDraggable(scene.minimapDragZone, true);
+            } else {
+                scene.minimapDragZone.disableInteractive();
+                scene.input.setDraggable(scene.minimapDragZone, false);
+            }
+        };
+        scene.toggleMinimap(false);
 
         const graphics = scene.add.graphics();
         graphics.lineStyle(1, 0x2c7a4d, 0.8);
@@ -199,6 +235,15 @@ export class MeadowScene extends Phaser.Scene {
         scene.socket.emit("request_init_state");
 
         scene.input.on("drag", (pointer, gameObject, dragX, dragY) => {
+            if (gameObject === scene.minimapDragZone) {
+                const localX = pointer.x - MINIMAP_CONFIG.MARGIN_LEFT;
+                const localY = pointer.y - MINIMAP_CONFIG.MARGIN_TOP;
+                const worldX = MAP_CONFIG.WIDTH / 2 + (localX - MINIMAP_CONFIG.WIDTH / 2) / scene.minimapZoom;
+                const worldY = MAP_CONFIG.HEIGHT / 2 + (localY - MINIMAP_CONFIG.HEIGHT / 2) / scene.minimapZoom;
+                scene.cameras.main.centerOn(worldX, worldY);
+                return;
+            }
+
             const cellIndexX = Math.floor(dragX / MAP_CONFIG.TILE_SIZE);
             const cellIndexY = Math.floor((dragY - 24) / MAP_CONFIG.TILE_SIZE);
             const snappedGridX = cellIndexX * MAP_CONFIG.TILE_SIZE + 24;
@@ -214,6 +259,7 @@ export class MeadowScene extends Phaser.Scene {
         });
 
         scene.input.on("dragend", (pointer, gameObject) => {
+            if (gameObject === scene.minimapDragZone) return;
             if (gameObject.body) gameObject.body.updateFromGameObject();
             gameObject.setAlpha(1.0);
             scene.input.setDraggable(gameObject, false);
@@ -280,7 +326,13 @@ export class MeadowScene extends Phaser.Scene {
             window.player.body.setVelocityY(MAP_CONFIG.PLAYER_SPEED);
             moved = true;
         }
-        if (moved) this.socket.emit("player_move", { x: window.player.x, y: window.player.y });
+        if (moved) {
+            this.socket.emit("player_move", { x: window.player.x, y: window.player.y });
+            if (this.isFreeLook) {
+                this.isFreeLook = false;
+                this.cameras.main.startFollow(window.player, true, 0.1, 0.1);
+            }
+        }
 
         // Keep minimap blips and viewport indicator in sync with the world every frame
         if (this.playerBlip) this.playerBlip.setPosition(window.player.x, window.player.y);
