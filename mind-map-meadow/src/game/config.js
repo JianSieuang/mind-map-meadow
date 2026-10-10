@@ -22,4 +22,11 @@ export const KEY_CONTROLS = {
 export const ASSET_REGISTRY = {
     house: { path: "Buildings/House.png", category: "building" },
     supermarket: { path: "Shop/SuperMarket.png", category: "building" },
+    cozy_bench: { path: "Decoration/CozyBench.png", category: "building" },
+    garden_fountain: { path: "Decoration/GardenFountain.png", category: "building" },
+};
+
+export const CHARACTER_ASSETS = {
+    player: new URL("../assets/Characters/PlayerCharacter.png", import.meta.url).href,
+    aiCompanion: new URL("../assets/Characters/AiCompanion.png", import.meta.url).href,
 };

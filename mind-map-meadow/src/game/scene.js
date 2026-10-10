@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { MAP_CONFIG, KEY_CONTROLS, ASSET_REGISTRY, MINIMAP_CONFIG } from "./config";
+import { MAP_CONFIG, KEY_CONTROLS, ASSET_REGISTRY, MINIMAP_CONFIG, CHARACTER_ASSETS } from "./config";
 import { renderBuilding } from "./buildings";
 
 export class MeadowScene extends Phaser.Scene {
@@ -20,6 +20,9 @@ export class MeadowScene extends Phaser.Scene {
                 console.error(`❌ [Asset Preloader Failure] Could not load nested target file mapping at ${asset.path}:`, err.message);
             }
         });
+
+        this.load.image("player_character", CHARACTER_ASSETS.player);
+        this.load.image("ai_companion_character", CHARACTER_ASSETS.aiCompanion);
     }
 
     create() {
@@ -175,11 +178,12 @@ export class MeadowScene extends Phaser.Scene {
             right: Phaser.Input.Keyboard.KeyCodes[KEY_CONTROLS.RIGHT],
         });
 
-        window.player = scene.add.rectangle(400, 300, 32, 48, 0x2980b9);
+        window.player = scene.add.image(400, 300, "player_character");
         scene.physics.add.existing(window.player);
+        window.player.body.setSize(32, 48);
         window.player.body.setCollideWorldBounds(true);
 
-        window.aiCompanion = scene.add.circle(500, 350, 20, 0xe74c3c);
+        window.aiCompanion = scene.add.image(500, 350, "ai_companion_character");
 
         // Oversized blips so player/AI stay visible once shrunk down by the minimap's zoom
         scene.playerBlip = scene.add.circle(window.player.x, window.player.y, 70, 0x60a5fa).setStrokeStyle(14, 0xffffff, 0.95).setDepth(10001);
