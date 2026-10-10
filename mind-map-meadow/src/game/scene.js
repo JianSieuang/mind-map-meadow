@@ -128,6 +128,29 @@ export class MeadowScene extends Phaser.Scene {
         };
         scene.toggleMinimap(false);
 
+        // ── Visiting a friend's meadow: swap the rendered buildings for a
+        // read-only snapshot of theirs, and block the ground "add task" prompt.
+        // Leaving just re-requests our own init_state, which renders normally again.
+        scene.isVisiting = false;
+
+        scene.enterVisitMode = (buildings, onInspect) => {
+            scene.isVisiting = true;
+            window.buildingsGroup.getChildren().forEach((child) => {
+                const blip = child.getData("minimapBlip");
+                if (blip) blip.destroy();
+            });
+            window.buildingsGroup.clear(true, true);
+            scene.clearActiveMenu();
+            scene.clearGroundPrompt();
+            scene.gridHighlight.setVisible(false);
+            (buildings || []).forEach((b) => renderBuilding(scene, b, onInspect, window.buildingsGroup, scene.socket, { readOnly: true }));
+        };
+
+        scene.exitVisitMode = () => {
+            scene.isVisiting = false;
+            scene.socket.emit("request_init_state");
+        };
+
         const graphics = scene.add.graphics();
         graphics.lineStyle(1, 0x2c7a4d, 0.8);
         for (let x = 0; x < MAP_CONFIG.WIDTH; x += MAP_CONFIG.TILE_SIZE) {
@@ -273,6 +296,7 @@ export class MeadowScene extends Phaser.Scene {
             if (localObjects.length === 0) {
                 scene.clearActiveMenu();
                 scene.clearGroundPrompt();
+                if (scene.isVisiting) return;
 
                 const targetCellX = Math.floor(pointer.worldX / MAP_CONFIG.TILE_SIZE);
                 const targetCellY = Math.floor(pointer.worldY / MAP_CONFIG.TILE_SIZE);

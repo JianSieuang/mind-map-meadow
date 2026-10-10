@@ -17,10 +17,10 @@ export async function generateTodayInstances() {
 
         for (const template of templates.rows) {
             await pool.query(
-                `INSERT INTO tasks (title, category, due_date, estimated_minutes, recurring_task_id)
-                 VALUES ($1, $2, $3, $4, $5)
+                `INSERT INTO tasks (title, category, due_date, estimated_minutes, recurring_task_id, user_id)
+                 VALUES ($1, $2, $3, $4, $5, $6)
                  ON CONFLICT (recurring_task_id, due_date) WHERE recurring_task_id IS NOT NULL DO NOTHING`,
-                [template.title, template.category, dateStr, template.estimated_minutes, template.id],
+                [template.title, template.category, dateStr, template.estimated_minutes, template.id, template.user_id],
             );
         }
     } catch (err) {

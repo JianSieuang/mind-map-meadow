@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import TaskForm from "./TaskForm";
+import TaskForm from "../components/TaskForm";
 import { estimateTaskReward } from "../utils/rewards";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

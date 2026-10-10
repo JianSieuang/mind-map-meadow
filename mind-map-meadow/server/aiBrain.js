@@ -9,7 +9,7 @@ function setRandomWanderTarget(gameContext) {
     gameContext.aiTargetPos = { x: targetX, y: targetY };
 }
 
-export async function triggerLlamaBrainDecision(io, gameContext) {
+export async function triggerLlamaBrainDecision(io, gameContext, userId) {
     if (isAiThinking) {
         console.log("⏳ [AI Brain] Previous request still processing. Skipping interval...");
         return;
@@ -22,9 +22,9 @@ export async function triggerLlamaBrainDecision(io, gameContext) {
     const timeoutId = setTimeout(() => controller.abort(), 300000); // 5-minute safety threshold window
 
     try {
-        const statsQuery = await pool.query("SELECT * FROM player_stats WHERE username = 'chong' LIMIT 1");
-        const tasksQuery = await pool.query("SELECT title, category, status FROM tasks LIMIT 5");
-        const buildingsQuery = await pool.query("SELECT id, x, y FROM buildings");
+        const statsQuery = await pool.query("SELECT * FROM player_stats WHERE user_id = $1 LIMIT 1", [userId]);
+        const tasksQuery = await pool.query("SELECT title, category, status FROM tasks WHERE user_id = $1 LIMIT 5", [userId]);
+        const buildingsQuery = await pool.query("SELECT id, x, y FROM buildings WHERE user_id = $1", [userId]);
 
         const stats = statsQuery.rows[0] || { level: 1, coins: 0 };
         const buildingsList = buildingsQuery.rows.map((b) => `ID:${b.id} (X:${b.x},Y:${b.y})`).join(", ");
@@ -37,10 +37,10 @@ export async function triggerLlamaBrainDecision(io, gameContext) {
             signal: controller.signal,
             body: JSON.stringify({
                 model: "llama3.2:latest",
-                prompt: `You are an autonomous companion circle in a game. User: 'Chong'. Stats: Level ${stats.level}, Coins: ${stats.coins}. Tasks: ${JSON.stringify(tasksQuery.rows)}. Map buildings: [${buildingsList}].
+                prompt: `You are an autonomous companion circle in a game. Stats: Level ${stats.level}, Coins: ${stats.coins}. Tasks: ${JSON.stringify(tasksQuery.rows)}. Map buildings: [${buildingsList}].
                 Pick an action: FOLLOW_PLAYER, WANDER, or INSPECT_BUILDING:id.
                 Respond ONLY in this exact plain text layout:
-                ACTION: <your chosen action> | THOUGHT: <1 sentence comment to Chong>`,
+                ACTION: <your chosen action> | THOUGHT: <1 sentence comment to the player>`,
                 stream: false,
                 options: {
                     num_ctx: 512,
@@ -57,7 +57,7 @@ export async function triggerLlamaBrainDecision(io, gameContext) {
         console.log(`🧠 [AI Brain] Raw Output Received:\n"${rawAiOutput}"`);
 
         // Text parsing logic
-        let parsedThought = "Awaiting your next objective, Chong...";
+        let parsedThought = "Awaiting your next objective...";
         if (rawAiOutput.includes("THOUGHT:")) {
             parsedThought = rawAiOutput.split("THOUGHT:")[1].trim();
         } else {
@@ -69,7 +69,7 @@ export async function triggerLlamaBrainDecision(io, gameContext) {
 
         // Action routing rule assessment algorithms
         if (rawAiOutput.includes("FOLLOW_PLAYER")) {
-            console.log("🎯 [AI Action] Target Lock: Moving to follow Chong.");
+            console.log("🎯 [AI Action] Target Lock: Moving to follow the player.");
             gameContext.aiTargetPos = { x: gameContext.playerPos.x, y: gameContext.playerPos.y };
         } else if (rawAiOutput.includes("INSPECT_BUILDING")) {
             const match = rawAiOutput.match(/INSPECT_BUILDING:(\d+)/);
@@ -89,7 +89,7 @@ export async function triggerLlamaBrainDecision(io, gameContext) {
             setRandomWanderTarget(gameContext);
         }
 
-        await pool.query(`INSERT INTO ai_analysis (analysis_text, raw_response) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [gameContext.aiCurrentThought, rawAiOutput]);
+        await pool.query(`INSERT INTO ai_analysis (analysis_text, raw_response, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [gameContext.aiCurrentThought, rawAiOutput, userId]);
     } catch (err) {
         if (err.name === "AbortError") {
             console.error("❌ [AI Brain Timeout]: Model setup exceeded 5-minute allocation ceiling.");

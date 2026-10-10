@@ -26,6 +26,11 @@ services:
         environment:
             - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB}
             - VITE_WATCH=true
+            - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+            - GOOGLE_CLIENT_ID_ANDROID=${GOOGLE_CLIENT_ID_ANDROID}
+            - GOOGLE_CLIENT_ID_IOS=${GOOGLE_CLIENT_ID_IOS}
+            - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+            - SESSION_SECRET=${SESSION_SECRET}
         volumes:
             - ./mind-map-meadow:/app
             - /app/node_modules

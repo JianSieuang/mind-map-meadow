@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import TaskForm from "./TaskForm";
+import TaskForm from "../components/TaskForm";
 import { estimateTaskReward, isTaskOverdue } from "../utils/rewards";
 
 const TABS = [

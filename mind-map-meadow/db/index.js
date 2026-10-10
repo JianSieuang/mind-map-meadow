@@ -8,7 +8,18 @@ const __dirname = path.dirname(__filename);
 export async function runMigrations(pool) {
     console.log("🗄️ [Database] Checking schema migration layout parameters...");
 
-    const migrationFiles = ["01_extensions.sql", "02_player_stats.sql", "03_buildings.sql", "04_tasks.sql", "05_ai_analysis.sql", "06_recurring_tasks.sql", "07_recurring_task_times.sql"];
+    const migrationFiles = [
+        "01_extensions.sql",
+        "02_player_stats.sql",
+        "03_buildings.sql",
+        "04_tasks.sql",
+        "05_ai_analysis.sql",
+        "06_recurring_tasks.sql",
+        "07_recurring_task_times.sql",
+        "08_users_and_ownership.sql",
+        "09_sessions.sql",
+        "10_friendships.sql",
+    ];
 
     for (const file of migrationFiles) {
         const filePath = path.join(__dirname, file);

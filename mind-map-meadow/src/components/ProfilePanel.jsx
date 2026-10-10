@@ -17,7 +17,7 @@ function StatBadge({ icon, tint }) {
     return <div className={`w-9 h-9 rounded-full flex items-center justify-center text-lg shrink-0 ${tint}`}>{icon}</div>;
 }
 
-export default function ProfilePanel({ stats, aiThought }) {
+export default function ProfilePanel({ stats, aiThought, user, onLogout }) {
     const level = stats.level || 1;
     const xp = stats.xp || 0;
     const xpThreshold = level * 100;
@@ -27,6 +27,19 @@ export default function ProfilePanel({ stats, aiThought }) {
 
     return (
         <div className="absolute top-6 right-20 z-20 w-[300px] p-4 flex flex-col gap-4 rounded-xl bg-[#23232e]/90 backdrop-blur-md border border-slate-700/60 shadow-[0_0_40px_-10px_rgba(99,102,241,0.35)]">
+            {/* Signed-in account + logout */}
+            {user && (
+                <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex items-center gap-2">
+                        {user.avatarUrl && <img src={user.avatarUrl} alt="" className="w-6 h-6 rounded-full shrink-0" />}
+                        <span className="text-[11px] text-slate-300 truncate">{user.name || user.email}</span>
+                    </div>
+                    <button onClick={onLogout} className="text-[10px] font-semibold text-slate-400 hover:text-rose-400 transition shrink-0">
+                        Log out
+                    </button>
+                </div>
+            )}
+
             {/* AI Narrative Monitor Component */}
             <div className="bg-gradient-to-br from-indigo-900/60 to-purple-900/40 border border-indigo-500/30 p-3.5 rounded-xl shadow-inner">
                 <h3 className="text-[11px] uppercase tracking-wider text-indigo-300 font-bold mb-1 flex items-center gap-1">

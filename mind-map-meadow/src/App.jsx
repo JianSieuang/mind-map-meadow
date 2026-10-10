@@ -5,16 +5,22 @@ import { MINIMAP_CONFIG } from "./game/config";
 import { ALL_DAYS } from "./utils/duration";
 import ProfilePanel from "./components/ProfilePanel";
 import AgendaPanel from "./components/AgendaPanel";
+import FriendsPanel from "./components/FriendsPanel";
 import HudIconRail from "./components/HudIconRail";
 import TaskModal from "./components/TaskModal";
 import BuildingCard from "./components/BuildingCard";
-import TaskDashboard from "./components/TaskDashboard";
+import TaskDashboard from "./pages/TaskDashboard";
+import LoginPage from "./pages/LoginPage";
 
-const socket = io();
+const socket = io({ autoConnect: false, withCredentials: true });
 
 export default function App() {
     const gameContainerRef = useRef(null);
     const phaserRef = useRef(null);
+
+    // undefined = still checking for an existing session, null = logged out
+    const [user, setUser] = useState(undefined);
+    const [authError, setAuthError] = useState(null);
 
     const [stats, setStats] = useState({ level: 1, xp: 0, coins: 0, calories_burned: 0 });
     const [tasks, setTasks] = useState([]);
@@ -22,8 +28,8 @@ export default function App() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDashboardOpen, setIsDashboardOpen] = useState(false);
 
-    // Only one of Profile/Agenda can be open at a time — they render in the same spot
-    const [activeHudPanel, setActiveHudPanel] = useState(null); // null | "profile" | "agenda"
+    // Only one of Profile/Agenda/Friends can be open at a time — they render in the same spot
+    const [activeHudPanel, setActiveHudPanel] = useState(null); // null | "profile" | "agenda" | "friends"
     const [isMinimapOpen, setIsMinimapOpen] = useState(false);
 
     const [selectedBuildingId, setSelectedBuildingId] = useState(null);
@@ -31,7 +37,51 @@ export default function App() {
     const [aiThought, setAiThought] = useState("Awaiting model data synchronization pass...");
     const [rewardToast, setRewardToast] = useState(null);
 
+    const [friendsState, setFriendsState] = useState({ friends: [], incoming: [], outgoing: [] });
+    const [friendSearchResults, setFriendSearchResults] = useState([]);
+    const [visitingFriend, setVisitingFriend] = useState(null); // { host, buildings } | null
+
     useEffect(() => {
+        fetch("/auth/me", { credentials: "include" })
+            .then((res) => (res.ok ? res.json() : { user: null }))
+            .then((data) => setUser(data.user))
+            .catch(() => setUser(null));
+    }, []);
+
+    const handleLogin = async (credentialResponse, errorMessage) => {
+        if (errorMessage) {
+            setAuthError(errorMessage);
+            return;
+        }
+        try {
+            const res = await fetch("/auth/google", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ credential: credentialResponse.credential }),
+            });
+            if (!res.ok) throw new Error("Login failed");
+            const data = await res.json();
+            setAuthError(null);
+            setUser(data.user);
+        } catch (err) {
+            setAuthError("Sign-in failed. Please try again.");
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            await fetch("/auth/logout", { method: "POST", credentials: "include" });
+        } finally {
+            window.location.reload();
+        }
+    };
+
+    useEffect(() => {
+        if (!user) return;
+
+        socket.connect();
+
         if (gameContainerRef.current && !phaserRef.current) {
             phaserRef.current = initPhaser(
                 gameContainerRef.current,
@@ -76,6 +126,38 @@ export default function App() {
             setTimeout(() => setRewardToast(null), 3500);
         });
 
+        socket.on("friends_state", (data) => {
+            setFriendsState(data);
+        });
+
+        socket.on("search_users_result", (results) => {
+            setFriendSearchResults(results);
+        });
+
+        socket.on("visit_state", (data) => {
+            setVisitingFriend(data);
+            setSelectedBuildingId(null);
+            setSelectedBuildingData(null);
+            const scene = phaserRef.current?.scene.scenes[0];
+            if (scene) {
+                scene.enterVisitMode(data.buildings, (id) => {
+                    setSelectedBuildingId(id);
+                    const building = data.buildings.find((b) => b.id === id);
+                    setSelectedBuildingData(
+                        building && building.task_title
+                            ? `<strong style="color:#4ade80;">💎 ${building.task_title}</strong><br/><small style="color:#a0a0b8;">Category: ${building.task_category}</small>`
+                            : null,
+                    );
+                });
+            }
+        });
+
+        socket.on("visit_failed", (message) => {
+            console.error("❌ [Visit Failed]:", message);
+        });
+
+        socket.emit("request_friends_state");
+
         return () => {
             socket.off("init_state");
             socket.off("refresh_data");
@@ -83,8 +165,12 @@ export default function App() {
             socket.off("inspection_details");
             socket.off("ai_thought_broadcast");
             socket.off("task_reward");
+            socket.off("friends_state");
+            socket.off("search_users_result");
+            socket.off("visit_state");
+            socket.off("visit_failed");
         };
-    }, []);
+    }, [user]);
 
     // Freeze input controls when a full-screen overlay (task modal or dashboard) is open
     useEffect(() => {
@@ -143,7 +229,44 @@ export default function App() {
         socket.emit("toggle_recurring_task", { id, active });
     };
 
+    const handleSearchFriends = (query) => {
+        if (query.trim().length >= 2) socket.emit("search_users", { query });
+        else setFriendSearchResults([]);
+    };
+
+    const handleSendFriendRequest = (addresseeId) => {
+        socket.emit("send_friend_request", { addresseeId });
+    };
+
+    const handleRespondFriendRequest = (requestId, accept) => {
+        socket.emit("respond_friend_request", { requestId, accept });
+    };
+
+    const handleRemoveFriend = (friendshipId) => {
+        socket.emit("remove_friend", { friendshipId });
+    };
+
+    const handleVisitFriend = (friendId) => {
+        socket.emit("visit_friend_map", { friendId });
+    };
+
+    const handleLeaveVisit = () => {
+        setVisitingFriend(null);
+        setSelectedBuildingId(null);
+        setSelectedBuildingData(null);
+        const scene = phaserRef.current?.scene.scenes[0];
+        if (scene) scene.exitVisitMode();
+    };
+
     const pendingCount = tasks.filter((t) => t.status === "pending").length;
+
+    if (user === undefined) {
+        return <div className="w-screen h-screen bg-[#1e1e24] flex items-center justify-center text-slate-400 text-sm">Loading...</div>;
+    }
+
+    if (!user) {
+        return <LoginPage onLogin={handleLogin} error={authError} />;
+    }
 
     return (
         <div className="w-screen h-screen bg-[#1e1e24] overflow-hidden select-none font-sans">
@@ -168,16 +291,42 @@ export default function App() {
                     🗺️
                 </button>
 
-                {/* Profile / Agenda Icon Rail + Popover Panels (mutually exclusive — same screen slot) */}
+                {/* Profile / Agenda / Friends Icon Rail + Popover Panels (mutually exclusive — same screen slot) */}
                 <HudIconRail
                     isProfileOpen={activeHudPanel === "profile"}
                     isAgendaOpen={activeHudPanel === "agenda"}
+                    isFriendsOpen={activeHudPanel === "friends"}
                     onToggleProfile={() => setActiveHudPanel((p) => (p === "profile" ? null : "profile"))}
                     onToggleAgenda={() => setActiveHudPanel((p) => (p === "agenda" ? null : "agenda"))}
+                    onToggleFriends={() => setActiveHudPanel((p) => (p === "friends" ? null : "friends"))}
                     pendingCount={pendingCount}
+                    friendRequestCount={friendsState.incoming.length}
                 />
-                {activeHudPanel === "profile" && <ProfilePanel stats={stats} aiThought={aiThought} />}
+                {activeHudPanel === "profile" && <ProfilePanel stats={stats} aiThought={aiThought} user={user} onLogout={handleLogout} />}
                 {activeHudPanel === "agenda" && <AgendaPanel tasks={tasks} onCompleteTask={handleCompleteTask} />}
+                {activeHudPanel === "friends" && (
+                    <FriendsPanel
+                        friendsState={friendsState}
+                        searchResults={friendSearchResults}
+                        onSearch={handleSearchFriends}
+                        onSendRequest={handleSendFriendRequest}
+                        onRespondRequest={handleRespondFriendRequest}
+                        onRemoveFriend={handleRemoveFriend}
+                        onVisit={handleVisitFriend}
+                    />
+                )}
+
+                {/* Visiting banner — read-only tour of a friend's meadow */}
+                {visitingFriend && (
+                    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-40 bg-[#23232e]/95 border border-indigo-500/50 rounded-xl px-4 py-2 shadow-2xl flex items-center gap-3">
+                        <span className="text-xs text-slate-200">
+                            🚪 Visiting <strong>{visitingFriend.host.name || "a friend"}'s</strong> meadow (read-only)
+                        </span>
+                        <button onClick={handleLeaveVisit} className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1 px-2.5 rounded text-[11px] transition">
+                            Leave
+                        </button>
+                    </div>
+                )}
 
                 {/* Reward Toast */}
                 {rewardToast && (
@@ -189,8 +338,8 @@ export default function App() {
                     </div>
                 )}
 
-                {/* Dashboard Toggle */}
-                {!isDashboardOpen && (
+                {/* Dashboard Toggle — hidden while touring a friend's meadow */}
+                {!isDashboardOpen && !visitingFriend && (
                     <button
                         onClick={() => setIsDashboardOpen(true)}
                         className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-5 rounded-full text-xs shadow-2xl transition flex items-center gap-1.5"

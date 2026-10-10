@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 
-export function renderBuilding(scene, b, onInspect, group, socket) {
+export function renderBuilding(scene, b, onInspect, group, socket, options = {}) {
+    const { readOnly = false } = options;
     const textureHandle = `${b.asset_key.toLowerCase()}_asset`;
 
     const verifiedTexture = scene.textures.exists(textureHandle) ? textureHandle : "library_asset";
@@ -39,6 +40,8 @@ export function renderBuilding(scene, b, onInspect, group, socket) {
         scene.currentSelectedBuilding = elementSprite;
         elementSprite.setTint(0xf1c40f);
         onInspect(b.id);
+
+        if (readOnly) return; // view-only tour — no move/close menu, no dragging
 
         const menuContainer = scene.add.container(elementSprite.x, elementSprite.y + 22);
         menuContainer.setData("isUiElement", true);

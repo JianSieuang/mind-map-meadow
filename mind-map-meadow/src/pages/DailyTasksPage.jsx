@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import RecurringTaskForm from "./RecurringTaskForm";
+import RecurringTaskForm from "../components/RecurringTaskForm";
 import { formatTimeRange } from "../utils/duration";
 
 function todayDateKey() {
