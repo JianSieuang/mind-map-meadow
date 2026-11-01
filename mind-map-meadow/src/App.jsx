@@ -15,7 +15,11 @@ import QuickAddMoney from "./components/QuickAddMoney";
 import { browserTimeZone } from "./utils/dates";
 import { escapeHtml } from "./utils/html";
 
-const socket = io({ autoConnect: false, withCredentials: true, auth: { timezone: browserTimeZone() } });
+// One socket for the page's lifetime. Under Vite HMR this module re-executes; reuse the
+// existing socket so the already-running Phaser scene (which holds a reference to it)
+// and App stay on the same connection instead of App silently moving to a new one.
+const socket = import.meta.hot?.data.socket ?? io({ autoConnect: false, withCredentials: true, auth: { timezone: browserTimeZone() } });
+if (import.meta.hot) import.meta.hot.data.socket = socket;
 
 // HTML for BuildingCard (rendered via dangerouslySetInnerHTML) when inspecting a friend's
 // building. Every interpolated value is escaped — this is another account's data.
@@ -132,13 +136,17 @@ export default function App() {
             );
         }
 
-        socket.on("init_state", (state) => {
+        // Named handlers, removed by reference in cleanup. The socket is shared with the
+        // Phaser scene, which registers its own init_state/building_*/state_update
+        // listeners — socket.off(event) with no handler would silently remove those too.
+        const onInitState = (state) => {
+            if (!state) return;
             if (state.stats) setStats(state.stats);
             if (state.tasks) setTasks(state.tasks);
             if (state.recurringTasks) setRecurringTasks(state.recurringTasks);
             if (state.transactions) setTransactions(state.transactions);
             if (state.savingsGoals) setSavingsGoals(state.savingsGoals);
-        });
+        };
 
         // Back-to-back rewards (e.g. log reward + milestone reward) merge into the visible
         // reward toast instead of replacing it. Errors always show on their own.
@@ -157,6 +165,10 @@ export default function App() {
             }
             moneyToastRef.current = next;
             setMoneyToast(next);
+            if (toast.sticky) {
+                moneyToastTimer.current = null; // stays until replaced (e.g. "Connection lost")
+                return;
+            }
             const timer = setTimeout(() => {
                 if (moneyToastTimer.current !== timer) return; // superseded by a newer toast
                 moneyToastTimer.current = null;
@@ -166,52 +178,52 @@ export default function App() {
             moneyToastTimer.current = timer;
         };
 
-        socket.on("refresh_money", (data) => {
+        const onRefreshMoney = (data) => {
             if (data.stats) setStats(data.stats);
             if (data.transactions) setTransactions(data.transactions);
             if (data.savingsGoals) setSavingsGoals(data.savingsGoals);
-        });
+        };
 
-        socket.on("money_reward", (data) => {
+        const onMoneyReward = (data) => {
             const coins = Number(data.coins) || 0;
             showMoneyToast({ kind: "reward", coins, text: `🪙 +${coins}`, detail: data.reason });
-        });
+        };
 
-        socket.on("money_error", (message) => {
+        const onMoneyError = (message) => {
             showMoneyToast({ kind: "error", text: "⚠️", detail: String(message) });
-        });
+        };
 
-        socket.on("refresh_data", (data) => {
+        const onRefreshData = (data) => {
             setStats(data.stats);
             setTasks(data.tasks);
-        });
+        };
 
-        socket.on("refresh_recurring_tasks", (data) => {
+        const onRefreshRecurringTasks = (data) => {
             setRecurringTasks(data.recurringTasks);
-        });
+        };
 
-        socket.on("inspection_details", (content) => {
+        const onInspectionDetails = (content) => {
             setSelectedBuildingData(content);
-        });
+        };
 
-        socket.on("ai_thought_broadcast", (data) => {
+        const onAiThought = (data) => {
             setAiThought(data.thought);
-        });
+        };
 
-        socket.on("task_reward", (data) => {
+        const onTaskReward = (data) => {
             setRewardToast(data);
             setTimeout(() => setRewardToast(null), 3500);
-        });
+        };
 
-        socket.on("friends_state", (data) => {
+        const onFriendsState = (data) => {
             setFriendsState(data);
-        });
+        };
 
-        socket.on("search_users_result", (results) => {
+        const onSearchUsersResult = (results) => {
             setFriendSearchResults(results);
-        });
+        };
 
-        socket.on("visit_state", (data) => {
+        const onVisitState = (data) => {
             setVisitingFriend(data);
             setSelectedBuildingId(null);
             setSelectedBuildingData(null);
@@ -223,28 +235,74 @@ export default function App() {
                     setSelectedBuildingData(visitBuildingCardHtml(building));
                 });
             }
-        });
+        };
 
-        socket.on("visit_failed", (message) => {
+        const onVisitFailed = (message) => {
             console.error("❌ [Visit Failed]:", message);
-        });
+        };
 
-        socket.emit("request_friends_state");
+        // Re-request on every (re)connect — a reconnect is a fresh server-side socket.
+        // (The Phaser scene re-requests init_state on "connect" itself.)
+        let cancelled = false;
+        let serverKickRetries = 0; // per disconnect episode — reset on every successful connect
+
+        const onConnect = () => {
+            serverKickRetries = 0;
+            socket.emit("request_friends_state");
+        };
+
+        // socket.io-client auto-reconnects after transport drops, but NOT after the server
+        // calls socket.disconnect() (reason "io server disconnect") — which is what happens
+        // to a socket without a valid session. Re-check the session: 401 -> reload into the
+        // login page; anything else (still logged in, 5xx, network error) -> retry with backoff.
+        const onDisconnect = (reason) => {
+            if (reason !== "io server disconnect") return;
+            fetch("/auth/me", { credentials: "include" })
+                .then((res) => res.status === 401)
+                .catch(() => false) // network error: session state unknown, keep retrying
+                .then((loggedOut) => {
+                    if (cancelled) return;
+                    if (loggedOut) {
+                        window.location.reload();
+                        return;
+                    }
+                    if (serverKickRetries >= 3) {
+                        console.error("❌ [Socket]: server keeps closing the connection; not retrying.");
+                        showMoneyToast({ kind: "error", text: "⚠️", detail: "Connection lost — please refresh", sticky: true });
+                        return;
+                    }
+                    serverKickRetries += 1;
+                    setTimeout(() => {
+                        if (!cancelled) socket.connect();
+                    }, 1000 * serverKickRetries);
+                });
+        };
+
+        const handlers = {
+            init_state: onInitState,
+            refresh_money: onRefreshMoney,
+            money_reward: onMoneyReward,
+            money_error: onMoneyError,
+            refresh_data: onRefreshData,
+            refresh_recurring_tasks: onRefreshRecurringTasks,
+            inspection_details: onInspectionDetails,
+            ai_thought_broadcast: onAiThought,
+            task_reward: onTaskReward,
+            friends_state: onFriendsState,
+            search_users_result: onSearchUsersResult,
+            visit_state: onVisitState,
+            visit_failed: onVisitFailed,
+            connect: onConnect,
+            disconnect: onDisconnect,
+        };
+        Object.entries(handlers).forEach(([event, handler]) => socket.on(event, handler));
+
+        // Already connected (effect re-run under HMR): "connect" won't fire again.
+        if (socket.connected) onConnect();
 
         return () => {
-            socket.off("init_state");
-            socket.off("refresh_data");
-            socket.off("refresh_recurring_tasks");
-            socket.off("inspection_details");
-            socket.off("ai_thought_broadcast");
-            socket.off("task_reward");
-            socket.off("friends_state");
-            socket.off("search_users_result");
-            socket.off("visit_state");
-            socket.off("visit_failed");
-            socket.off("refresh_money");
-            socket.off("money_reward");
-            socket.off("money_error");
+            cancelled = true;
+            Object.entries(handlers).forEach(([event, handler]) => socket.off(event, handler));
             clearTimeout(moneyToastTimer.current);
             moneyToastTimer.current = null;
             moneyToastRef.current = null;
