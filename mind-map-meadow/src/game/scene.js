@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { MAP_CONFIG, KEY_CONTROLS, ASSET_REGISTRY, MINIMAP_CONFIG, CHARACTER_ASSETS } from "./config";
-import { renderBuilding } from "./buildings";
+import { renderBuilding, textureForBuilding, alignBuildingBody } from "./buildings";
 
 export class MeadowScene extends Phaser.Scene {
     constructor(socket, onBuildingInspect, onMapClick) {
@@ -245,6 +245,32 @@ export class MeadowScene extends Phaser.Scene {
                 if (match.body) match.body.updateFromGameObject();
             }
         });
+
+        // Savings-goal milestone: swap to the new stage texture and celebrate.
+        const onBuildingUpdated = (data) => {
+            const match = window.buildingsGroup.getChildren().find((child) => child.getData("id") === data.id);
+            if (!match) return; // e.g. currently visiting a friend's meadow
+
+            const metadata = data.metadata || {};
+            match.setData("metadata", metadata);
+            match.setTexture(textureForBuilding(scene, { asset_key: match.getData("assetKey"), metadata }));
+            if (match.body) alignBuildingBody(match);
+
+            const baseScaleX = match.scaleX;
+            const baseScaleY = match.scaleY;
+            scene.tweens.killTweensOf(match);
+            match.setScale(baseScaleX * 1.15, baseScaleY * 1.15);
+            scene.tweens.add({ targets: match, scaleX: baseScaleX, scaleY: baseScaleY, duration: 450, ease: "Back.easeOut" });
+
+            match.setTint(0xffe08a);
+            scene.time.delayedCall(300, () => {
+                if (!match.active) return;
+                if (scene.currentSelectedBuilding === match) match.setTint(0xf1c40f);
+                else match.clearTint();
+            });
+        };
+        scene.socket.on("building_updated", onBuildingUpdated);
+        scene.events.once("shutdown", () => scene.socket.off("building_updated", onBuildingUpdated));
 
         scene.socket.on("building_removed", (data) => {
             const match = window.buildingsGroup.getChildren().find((child) => child.getData("id") === data.id);

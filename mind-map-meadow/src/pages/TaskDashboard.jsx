@@ -2,11 +2,13 @@ import React, { useState } from "react";
 import GoalsPage from "./GoalsPage";
 import CalendarPage from "./CalendarPage";
 import DailyTasksPage from "./DailyTasksPage";
+import MoneyPage from "./MoneyPage";
 
 const PAGES = [
     { key: "goals", label: "Goals", icon: "📋" },
     { key: "calendar", label: "Calendar", icon: "🗓️" },
     { key: "daily", label: "Daily Tasks", icon: "🔁" },
+    { key: "money", label: "Money", icon: "💰" },
 ];
 
 export default function TaskDashboard({
@@ -22,6 +24,12 @@ export default function TaskDashboard({
     onEditRecurringTask,
     onDeleteRecurringTask,
     onToggleRecurringTask,
+    transactions,
+    savingsGoals,
+    onAddSavingsGoal,
+    onDeleteSavingsGoal,
+    onDeleteTransaction,
+    onOpenQuickAdd,
 }) {
     const [activePage, setActivePage] = useState("goals");
 
@@ -62,6 +70,16 @@ export default function TaskDashboard({
                         onDeleteRecurringTask={onDeleteRecurringTask}
                         onToggleRecurringTask={onToggleRecurringTask}
                         onCompleteTask={onCompleteTask}
+                    />
+                )}
+                {activePage === "money" && (
+                    <MoneyPage
+                        transactions={transactions}
+                        savingsGoals={savingsGoals}
+                        onAddSavingsGoal={onAddSavingsGoal}
+                        onDeleteSavingsGoal={onDeleteSavingsGoal}
+                        onDeleteTransaction={onDeleteTransaction}
+                        onOpenQuickAdd={onOpenQuickAdd}
                     />
                 )}
             </div>

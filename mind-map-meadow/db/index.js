@@ -20,6 +20,8 @@ export async function runMigrations(pool) {
         "09_sessions.sql",
         "10_friendships.sql",
         "11_user_timezone.sql",
+        "12_money.sql",
+        "13_player_stats_username_default.sql",
     ];
 
     for (const file of migrationFiles) {

@@ -11,6 +11,7 @@ import TaskModal from "./components/TaskModal";
 import BuildingCard from "./components/BuildingCard";
 import TaskDashboard from "./pages/TaskDashboard";
 import LoginPage from "./pages/LoginPage";
+import QuickAddMoney from "./components/QuickAddMoney";
 import { browserTimeZone } from "./utils/dates";
 
 const socket = io({ autoConnect: false, withCredentials: true, auth: { timezone: browserTimeZone() } });
@@ -28,6 +29,12 @@ export default function App() {
     const [recurringTasks, setRecurringTasks] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+
+    const [transactions, setTransactions] = useState([]);
+    const [savingsGoals, setSavingsGoals] = useState([]);
+    const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+    const [moneyToast, setMoneyToast] = useState(null); // { kind: "reward" | "error", text }
+    const moneyToastTimer = useRef(null);
 
     // Only one of Profile/Agenda/Friends can be open at a time — they render in the same spot
     const [activeHudPanel, setActiveHudPanel] = useState(null); // null | "profile" | "agenda" | "friends"
@@ -103,6 +110,28 @@ export default function App() {
             if (state.stats) setStats(state.stats);
             if (state.tasks) setTasks(state.tasks);
             if (state.recurringTasks) setRecurringTasks(state.recurringTasks);
+            if (state.transactions) setTransactions(state.transactions);
+            if (state.savingsGoals) setSavingsGoals(state.savingsGoals);
+        });
+
+        const showMoneyToast = (toast) => {
+            clearTimeout(moneyToastTimer.current);
+            setMoneyToast(toast);
+            moneyToastTimer.current = setTimeout(() => setMoneyToast(null), 3500);
+        };
+
+        socket.on("refresh_money", (data) => {
+            if (data.stats) setStats(data.stats);
+            if (data.transactions) setTransactions(data.transactions);
+            if (data.savingsGoals) setSavingsGoals(data.savingsGoals);
+        });
+
+        socket.on("money_reward", (data) => {
+            showMoneyToast({ kind: "reward", text: `🪙 +${data.coins}`, detail: data.reason });
+        });
+
+        socket.on("money_error", (message) => {
+            showMoneyToast({ kind: "error", text: "⚠️", detail: String(message) });
         });
 
         socket.on("refresh_data", (data) => {
@@ -170,16 +199,20 @@ export default function App() {
             socket.off("search_users_result");
             socket.off("visit_state");
             socket.off("visit_failed");
+            socket.off("refresh_money");
+            socket.off("money_reward");
+            socket.off("money_error");
+            clearTimeout(moneyToastTimer.current);
         };
     }, [user]);
 
-    // Freeze input controls when a full-screen overlay (task modal or dashboard) is open
+    // Freeze input controls when an overlay (task modal, money quick-add, or dashboard) is open
     useEffect(() => {
         if (!phaserRef.current) return;
         const scene = phaserRef.current.scene.scenes[0];
         if (!scene || !scene.input || !scene.input.keyboard) return;
 
-        if (isModalOpen || isDashboardOpen) {
+        if (isModalOpen || isDashboardOpen || isQuickAddOpen) {
             scene.input.keyboard.disableGlobalCapture();
             scene.input.keyboard.enabled = false;
             scene.input.keyboard.resetKeys();
@@ -188,7 +221,7 @@ export default function App() {
             scene.input.keyboard.enabled = true;
             scene.input.keyboard.enableGlobalCapture();
         }
-    }, [isModalOpen, isDashboardOpen]);
+    }, [isModalOpen, isDashboardOpen, isQuickAddOpen]);
 
     // Toggle the Phaser-side minimap camera/frame open or closed
     useEffect(() => {
@@ -228,6 +261,22 @@ export default function App() {
 
     const handleToggleRecurringTask = ({ id, active }) => {
         socket.emit("toggle_recurring_task", { id, active });
+    };
+
+    const handleAddTransaction = ({ amountCents, direction, category, note, savingsGoalId }) => {
+        socket.emit("add_transaction", { amountCents, direction, category, note, savingsGoalId });
+    };
+
+    const handleDeleteTransaction = (id) => {
+        socket.emit("delete_transaction", id);
+    };
+
+    const handleAddSavingsGoal = ({ title, targetCents, deadline }) => {
+        socket.emit("add_savings_goal", { title, targetCents, deadline });
+    };
+
+    const handleDeleteSavingsGoal = (id) => {
+        socket.emit("delete_savings_goal", id);
     };
 
     const handleSearchFriends = (query) => {
@@ -339,14 +388,34 @@ export default function App() {
                     </div>
                 )}
 
-                {/* Dashboard Toggle — hidden while touring a friend's meadow */}
-                {!isDashboardOpen && !visitingFriend && (
-                    <button
-                        onClick={() => setIsDashboardOpen(true)}
-                        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-5 rounded-full text-xs shadow-2xl transition flex items-center gap-1.5"
+                {/* Money toast (log reward / milestone / error) */}
+                {moneyToast && (
+                    <div
+                        className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#23232e]/95 border rounded-xl px-4 py-2.5 shadow-2xl flex items-center gap-2 ${
+                            moneyToast.kind === "error" ? "border-rose-500/60" : "border-emerald-500/50"
+                        }`}
                     >
-                        📋 Goals
-                    </button>
+                        <span className={`font-bold text-sm ${moneyToast.kind === "error" ? "text-rose-400" : "text-yellow-400"}`}>{moneyToast.text}</span>
+                        {moneyToast.detail && <span className="text-xs text-slate-300">{moneyToast.detail}</span>}
+                    </div>
+                )}
+
+                {/* Goals + Money quick-log — hidden while touring a friend's meadow */}
+                {!isDashboardOpen && !visitingFriend && (
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+                        <button
+                            onClick={() => setIsDashboardOpen(true)}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-5 rounded-full text-xs shadow-2xl transition flex items-center gap-1.5"
+                        >
+                            📋 Goals
+                        </button>
+                        <button
+                            onClick={() => setIsQuickAddOpen(true)}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-full text-xs shadow-2xl transition flex items-center gap-1.5"
+                        >
+                            💸 Log
+                        </button>
+                    </div>
                 )}
             </div>
 
@@ -367,7 +436,16 @@ export default function App() {
                 onEditRecurringTask={handleEditRecurringTask}
                 onDeleteRecurringTask={handleDeleteRecurringTask}
                 onToggleRecurringTask={handleToggleRecurringTask}
+                transactions={transactions}
+                savingsGoals={savingsGoals}
+                onAddSavingsGoal={handleAddSavingsGoal}
+                onDeleteSavingsGoal={handleDeleteSavingsGoal}
+                onDeleteTransaction={handleDeleteTransaction}
+                onOpenQuickAdd={() => setIsQuickAddOpen(true)}
             />
+
+            {/* Money quick-log (rendered above the dashboard so it also works from the Money page) */}
+            <QuickAddMoney isOpen={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} onSubmit={handleAddTransaction} savingsGoals={savingsGoals} />
         </div>
     );
 }

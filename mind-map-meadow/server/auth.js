@@ -41,9 +41,10 @@ router.post("/google", async (req, res) => {
                 await pool.query("UPDATE recurring_tasks SET user_id = $1 WHERE user_id IS NULL", [user.id]);
                 await pool.query("UPDATE ai_analysis SET user_id = $1 WHERE user_id IS NULL", [user.id]);
             }
-
-            await pool.query("INSERT INTO player_stats (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", [user.id]);
         }
+
+        // Runs on every login so accounts created before the username-default fix self-heal.
+        await pool.query("INSERT INTO player_stats (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", [user.id]);
 
         req.session.userId = user.id;
         res.json({ user: toPublicUser(user) });

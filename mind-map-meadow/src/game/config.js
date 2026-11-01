@@ -24,6 +24,12 @@ export const ASSET_REGISTRY = {
     supermarket: { path: "Shop/SuperMarket.png", category: "building" },
     cozy_bench: { path: "Decoration/CozyBench.png", category: "building" },
     garden_fountain: { path: "Decoration/GardenFountain.png", category: "building" },
+    // Savings goal construction project, one texture per milestone stage (0 = empty plot … 4 = finished)
+    savings_project_0: { path: "Savings/Stage0.png", category: "building" },
+    savings_project_1: { path: "Savings/Stage1.png", category: "building" },
+    savings_project_2: { path: "Savings/Stage2.png", category: "building" },
+    savings_project_3: { path: "Savings/Stage3.png", category: "building" },
+    savings_project_4: { path: "Savings/Stage4.png", category: "building" },
 };
 
 export const CHARACTER_ASSETS = {
