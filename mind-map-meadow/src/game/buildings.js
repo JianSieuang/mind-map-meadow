@@ -31,6 +31,8 @@ export function renderBuilding(scene, b, onInspect, group, socket, options = {})
         if (b.metadata.scale) elementSprite.setScale(b.metadata.scale);
         if (b.metadata.alpha) elementSprite.setAlpha(b.metadata.alpha);
     }
+    // Resting scale, recorded once so effect tweens (building_updated pop) always return to it.
+    elementSprite.setData("baseScale", (b.metadata && b.metadata.scale) || 1);
 
     if (scene.minimapCamera) {
         const blip = scene.add.circle(b.x, b.y, 60, 0xfbbf24).setStrokeStyle(12, 0xffffff, 0.9).setDepth(9998);

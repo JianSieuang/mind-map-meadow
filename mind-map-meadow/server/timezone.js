@@ -19,3 +19,17 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export function localDayOfWeek(date, timeZone = "UTC") {
     return WEEKDAYS.indexOf(new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(date));
 }
+
+// Strict "YYYY-MM-DD" check: rejects impossible dates like 2026-02-31 that Date.parse accepts.
+export function isRealDate(str) {
+    if (typeof str !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+    const [year, month, day] = str.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+// Shifts a "YYYY-MM-DD" key by `days` (negative = earlier), staying in calendar-date space.
+export function addDaysToDateKey(dateKey, days) {
+    const [year, month, day] = dateKey.split("-").map(Number);
+    return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
