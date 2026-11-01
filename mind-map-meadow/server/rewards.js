@@ -1,12 +1,13 @@
+import { localDateKey } from "./timezone.js";
+
 export const ON_TIME_BONUS = 20;
 
-export function computeTaskReward(estimatedMinutes, dueDate, completedAt = new Date()) {
+// dueDate is a "YYYY-MM-DD" string; on time means completed on or before that day in the user's timezone.
+export function computeTaskReward(estimatedMinutes, dueDate, completedAt = new Date(), timeZone = "UTC") {
     const minutes = Number(estimatedMinutes) || 30;
     const baseCoins = Math.max(10, Math.round(minutes * 1.5));
 
-    const dueEnd = new Date(dueDate);
-    dueEnd.setUTCHours(23, 59, 59, 999);
-    const isOnTime = completedAt <= dueEnd;
+    const isOnTime = !dueDate || localDateKey(completedAt, timeZone) <= String(dueDate).slice(0, 10);
 
     const bonusCoins = isOnTime ? ON_TIME_BONUS : 0;
     return { baseCoins, bonusCoins, totalCoins: baseCoins + bonusCoins, isOnTime };

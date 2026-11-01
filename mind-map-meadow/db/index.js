@@ -19,6 +19,7 @@ export async function runMigrations(pool) {
         "08_users_and_ownership.sql",
         "09_sessions.sql",
         "10_friendships.sql",
+        "11_user_timezone.sql",
     ];
 
     for (const file of migrationFiles) {

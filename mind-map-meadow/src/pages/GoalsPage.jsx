@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import TaskForm from "../components/TaskForm";
 import { estimateTaskReward, isTaskOverdue } from "../utils/rewards";
+import { localDateKey, dueDateKey } from "../utils/dates";
 
 const TABS = [
     { key: "all", label: "All", icon: "📋" },
@@ -19,7 +20,8 @@ function formatDate(dueDate) {
 
 // Overdue or due today — the tasks that need attention right now
 function isDueOrOverdue(task) {
-    return new Date(task.due_date) <= new Date(new Date().toDateString());
+    const key = dueDateKey(task.due_date);
+    return key !== "" && key <= localDateKey();
 }
 
 export default function GoalsPage({ tasks, onAddTask, onEditTask, onDeleteTask, onCompleteTask }) {

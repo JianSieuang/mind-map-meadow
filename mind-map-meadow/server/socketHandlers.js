@@ -26,9 +26,14 @@ export function registerSocketEvents(io, socket, gameContext) {
 
     socket.on("complete_task", async (taskId) => {
         try {
-            const taskQuery = await pool.query("SELECT * FROM tasks WHERE id = $1 AND user_id = $2", [taskId, userId]);
-            if (taskQuery.rows.length === 0) return;
-            const task = taskQuery.rows[0];
+            // Claim the task atomically so a double-click/second tab can't pay out twice.
+            const claim = await pool.query(
+                `UPDATE tasks SET status = 'completed', completed_at = NOW()
+                 WHERE id = $1 AND user_id = $2 AND status = 'pending' RETURNING *`,
+                [taskId, userId],
+            );
+            if (claim.rows.length === 0) return;
+            const task = claim.rows[0];
 
             const gridX = Math.floor(Math.random() * (25 - 4) + 4);
             const gridY = Math.floor(Math.random() * (18 - 4) + 4);
@@ -42,16 +47,10 @@ export function registerSocketEvents(io, socket, gameContext) {
             );
             const newBuilding = buildingResult.rows[0];
 
-            const completedAt = new Date();
-            const { baseCoins, bonusCoins, totalCoins, isOnTime } = computeTaskReward(task.estimated_minutes, task.due_date, completedAt);
+            const { baseCoins, bonusCoins, totalCoins, isOnTime } = computeTaskReward(task.estimated_minutes, task.due_date, task.completed_at, socket.data.timezone);
             const calorieReward = task.category === "Fitness" ? 350 : 0;
 
-            await pool.query(
-                `UPDATE tasks
-                 SET status = 'completed', building_id = $1, coins_earned = $2, completed_at = NOW()
-                 WHERE id = $3 AND user_id = $4`,
-                [newBuilding.id, totalCoins, taskId, userId],
-            );
+            await pool.query(`UPDATE tasks SET building_id = $1, coins_earned = $2 WHERE id = $3 AND user_id = $4`, [newBuilding.id, totalCoins, taskId, userId]);
 
             const statsRow = (await pool.query("SELECT level, xp FROM player_stats WHERE user_id = $1 LIMIT 1", [userId])).rows[0];
             const { level: newLevel, xp: newXp } = applyLevelUp(statsRow.level, statsRow.xp + totalCoins);
@@ -136,7 +135,7 @@ export function registerSocketEvents(io, socket, gameContext) {
                 end_time || "08:00",
                 userId,
             ]);
-            await generateTodayInstances();
+            await generateTodayInstances(userId);
             await emitRefreshRecurringTasks(io, userId);
             await emitRefreshData(io, userId);
         } catch (err) {
@@ -165,7 +164,7 @@ export function registerSocketEvents(io, socket, gameContext) {
     socket.on("toggle_recurring_task", async ({ id, active }) => {
         try {
             await pool.query(`UPDATE recurring_tasks SET active = $1 WHERE id = $2 AND user_id = $3`, [active, id, userId]);
-            if (active) await generateTodayInstances();
+            if (active) await generateTodayInstances(userId);
             await emitRefreshRecurringTasks(io, userId);
             await emitRefreshData(io, userId);
         } catch (err) {
@@ -185,27 +184,34 @@ export function registerSocketEvents(io, socket, gameContext) {
     socket.on("purchase_building", async (purchaseData) => {
         const { assetKey, x, y } = purchaseData;
         const itemPriceSheet = { supermarket: 250, garden_fountain: 150, cozy_bench: 50 };
-        const price = itemPriceSheet[assetKey] || 999999;
+        const price = itemPriceSheet[assetKey];
+        if (price === undefined) {
+            socket.emit("purchase_failed", "Unknown item.");
+            return;
+        }
 
+        const client = await pool.connect();
         try {
-            const statsResult = await pool.query("SELECT coins FROM player_stats WHERE user_id = $1 LIMIT 1", [userId]);
-            const userCoins = statsResult.rows[0]?.coins || 0;
+            await client.query("BEGIN");
 
-            if (userCoins < price) {
+            // Check-and-debit in one statement so concurrent purchases can't double-spend.
+            const debit = await client.query("UPDATE player_stats SET coins = coins - $1 WHERE user_id = $2 AND coins >= $1 RETURNING coins", [price, userId]);
+            if (debit.rowCount === 0) {
+                await client.query("ROLLBACK");
                 socket.emit("purchase_failed", "Insufficient balance!");
                 return;
             }
 
-            await pool.query("UPDATE player_stats SET coins = coins - $1 WHERE user_id = $2", [price, userId]);
-
             const metadataJson = JSON.stringify({ purchase_price: price, purchased_at: new Date() });
             const layoutType = assetKey === "supermarket" ? "Shop" : "Decoration";
 
-            const buildingResult = await pool.query(
+            const buildingResult = await client.query(
                 `INSERT INTO buildings (type, asset_key, x, y, content, metadata, user_id)
                  VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
                 [layoutType, assetKey, x, y, `Purchased premium ${assetKey}`, metadataJson, userId],
             );
+
+            await client.query("COMMIT");
 
             io.to(room).emit("building_spawned", buildingResult.rows[0]);
 
@@ -213,7 +219,10 @@ export function registerSocketEvents(io, socket, gameContext) {
 
             triggerLlamaBrainDecision(io.to(room), gameContext, userId);
         } catch (err) {
+            await client.query("ROLLBACK").catch(() => {});
             console.error("❌ [Shop Failure]:", err.message);
+        } finally {
+            client.release();
         }
     });
 

@@ -1,17 +1,14 @@
 import React, { useState } from "react";
 import RecurringTaskForm from "../components/RecurringTaskForm";
 import { formatTimeRange } from "../utils/duration";
-
-function todayDateKey() {
-    return new Date().toISOString().slice(0, 10);
-}
+import { localDateKey, dueDateKey } from "../utils/dates";
 
 export default function DailyTasksPage({ recurringTasks, tasks, onAddRecurringTask, onEditRecurringTask, onDeleteRecurringTask, onToggleRecurringTask, onCompleteTask }) {
     const [isAdding, setIsAdding] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
-    const todayKey = todayDateKey();
+    const todayKey = localDateKey();
 
     const handleAdd = (values) => {
         onAddRecurringTask(values);
@@ -65,7 +62,7 @@ export default function DailyTasksPage({ recurringTasks, tasks, onAddRecurringTa
                         );
                     }
 
-                    const todayInstance = tasks.find((t) => t.recurring_task_id === template.id && typeof t.due_date === "string" && t.due_date.slice(0, 10) === todayKey);
+                    const todayInstance = tasks.find((t) => t.recurring_task_id === template.id && dueDateKey(t.due_date) === todayKey);
 
                     return (
                         <div

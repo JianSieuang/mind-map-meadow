@@ -1,7 +1,5 @@
 import { pool } from "./db.js";
 
-let isAiThinking = false;
-
 function setRandomWanderTarget(gameContext) {
     const targetX = Math.floor(Math.random() * 20 + 5) * 48 + 24;
     const targetY = Math.floor(Math.random() * 15 + 5) * 48 + 24;
@@ -10,13 +8,13 @@ function setRandomWanderTarget(gameContext) {
 }
 
 export async function triggerLlamaBrainDecision(io, gameContext, userId) {
-    if (isAiThinking) {
-        console.log("⏳ [AI Brain] Previous request still processing. Skipping interval...");
+    if (gameContext.isAiThinking) {
+        console.log(`⏳ [AI Brain] Previous request for user ${userId} still processing. Skipping...`);
         return;
     }
 
-    console.log("🧠 [AI Brain] Starting decision cycle...");
-    isAiThinking = true;
+    console.log(`🧠 [AI Brain] Starting decision cycle for user ${userId}...`);
+    gameContext.isAiThinking = true;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 300000); // 5-minute safety threshold window
@@ -97,6 +95,6 @@ export async function triggerLlamaBrainDecision(io, gameContext, userId) {
             console.error("❌ [AI Brain Failure]:", err.message);
         }
     } finally {
-        isAiThinking = false;
+        gameContext.isAiThinking = false;
     }
 }

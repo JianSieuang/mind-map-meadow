@@ -1,3 +1,5 @@
+import { localDateKey } from "./dates";
+
 export const DURATION_UNITS = [
     { value: "hours", label: "Hour(s)" },
     { value: "days", label: "Day(s)" },
@@ -16,7 +18,7 @@ export function dueDateFromDuration(amount, unit) {
     const n = Math.max(1, Number(amount) || 1);
     const due = new Date();
     if (unit === "days") due.setDate(due.getDate() + n);
-    return due.toISOString().slice(0, 10);
+    return localDateKey(due);
 }
 
 // Best-effort reverse mapping for editing an existing task that only has estimated_minutes stored.

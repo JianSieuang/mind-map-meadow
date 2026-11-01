@@ -11,8 +11,9 @@ import TaskModal from "./components/TaskModal";
 import BuildingCard from "./components/BuildingCard";
 import TaskDashboard from "./pages/TaskDashboard";
 import LoginPage from "./pages/LoginPage";
+import { browserTimeZone } from "./utils/dates";
 
-const socket = io({ autoConnect: false, withCredentials: true });
+const socket = io({ autoConnect: false, withCredentials: true, auth: { timezone: browserTimeZone() } });
 
 export default function App() {
     const gameContainerRef = useRef(null);

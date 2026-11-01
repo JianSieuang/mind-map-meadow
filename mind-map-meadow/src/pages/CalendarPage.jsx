@@ -1,12 +1,9 @@
 import React, { useState } from "react";
 import TaskForm from "../components/TaskForm";
 import { estimateTaskReward } from "../utils/rewards";
+import { localDateKey, dueDateKey, completedDateKey } from "../utils/dates";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function toDateKey(date) {
-    return date.toISOString().slice(0, 10);
-}
 
 function formatMonthLabel(year, month) {
     return new Date(year, month, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
@@ -14,7 +11,7 @@ function formatMonthLabel(year, month) {
 
 export default function CalendarPage({ tasks, onAddTask, onEditTask, onDeleteTask, onCompleteTask }) {
     const today = new Date();
-    const todayKey = toDateKey(today);
+    const todayKey = localDateKey(today);
 
     const [viewYear, setViewYear] = useState(today.getFullYear());
     const [viewMonth, setViewMonth] = useState(today.getMonth());
@@ -27,10 +24,10 @@ export default function CalendarPage({ tasks, onAddTask, onEditTask, onDeleteTas
     const pendingByDate = {};
     const completedByDate = {};
     tasks.forEach((task) => {
-        const dueKey = typeof task.due_date === "string" ? task.due_date.slice(0, 10) : "";
+        const dueKey = dueDateKey(task.due_date);
         if (task.status === "pending" && dueKey) pendingByDate[dueKey] = (pendingByDate[dueKey] || 0) + 1;
         if (task.status === "completed" && task.completed_at) {
-            const doneKey = task.completed_at.slice(0, 10);
+            const doneKey = completedDateKey(task.completed_at);
             completedByDate[doneKey] = (completedByDate[doneKey] || 0) + 1;
         }
     });
@@ -66,8 +63,8 @@ export default function CalendarPage({ tasks, onAddTask, onEditTask, onDeleteTas
         setEditingId(null);
     };
 
-    const selectedPending = tasks.filter((t) => t.status === "pending" && typeof t.due_date === "string" && t.due_date.slice(0, 10) === selectedDate);
-    const selectedCompleted = tasks.filter((t) => t.status === "completed" && t.completed_at && t.completed_at.slice(0, 10) === selectedDate);
+    const selectedPending = tasks.filter((t) => t.status === "pending" && dueDateKey(t.due_date) === selectedDate);
+    const selectedCompleted = tasks.filter((t) => t.status === "completed" && completedDateKey(t.completed_at) === selectedDate);
 
     const handleAdd = (values) => {
         onAddTask(values);

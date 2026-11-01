@@ -1,3 +1,5 @@
+import { localDateKey, dueDateKey } from "./dates";
+
 export const DURATION_OPTIONS = [
     { minutes: 15, label: "15 min" },
     { minutes: 30, label: "30 min" },
@@ -9,8 +11,8 @@ export const DURATION_OPTIONS = [
 export const ON_TIME_BONUS = 20;
 
 export function isTaskOverdue(dueDate) {
-    if (!dueDate) return false;
-    return new Date(dueDate) < new Date(new Date().toDateString());
+    const key = dueDateKey(dueDate);
+    return key !== "" && key < localDateKey();
 }
 
 export function estimateTaskReward(estimatedMinutes, dueDate) {

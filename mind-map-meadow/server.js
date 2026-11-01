@@ -14,6 +14,7 @@ import { triggerLlamaBrainDecision } from "./server/aiBrain.js";
 import { generateTodayInstances } from "./server/recurringTasks.js";
 import { sessionMiddleware } from "./server/sessionMiddleware.js";
 import authRouter from "./server/auth.js";
+import { isValidTimeZone } from "./server/timezone.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -80,6 +81,16 @@ io.on("connection", (socket) => {
     socket.data.userId = userId;
     socket.join(roomFor(userId));
 
+    const reportedTimeZone = socket.handshake.auth?.timezone;
+    socket.data.timezone = isValidTimeZone(reportedTimeZone) ? reportedTimeZone : "UTC";
+
+    // Persist the browser's timezone, then make sure today's habit instances exist for
+    // *their* today before the first init_state goes out.
+    const userReady = pool
+        .query("UPDATE users SET timezone = $1 WHERE id = $2", [socket.data.timezone, userId])
+        .then(() => generateTodayInstances(userId))
+        .catch((err) => console.error("❌ [Timezone Sync Error]:", err.message));
+
     const gameContext = getOrCreateGameContext(userId);
 
     // The client requests this once its Phaser scene has finished preloading and is
@@ -87,6 +98,7 @@ io.on("connection", (socket) => {
     // and can drop the buildings payload if the scene isn't ready yet.
     socket.on("request_init_state", async () => {
         try {
+            await userReady;
             const buildingsResult = await pool.query("SELECT * FROM buildings WHERE user_id = $1", [userId]);
             const statsResult = await pool.query("SELECT * FROM player_stats WHERE user_id = $1 LIMIT 1", [userId]);
             const tasksResult = await pool.query("SELECT * FROM tasks WHERE user_id = $1 ORDER BY due_date ASC, id ASC", [userId]);
@@ -108,6 +120,13 @@ io.on("connection", (socket) => {
 
     registerSocketEvents(io, socket, gameContext);
     registerFriendEvents(io, socket);
+
+    // Drop the user's in-memory context once their last tab/device disconnects, so
+    // the physics loop and AI interval stop doing work for logged-out users.
+    socket.on("disconnect", () => {
+        const remaining = io.sockets.adapter.rooms.get(roomFor(userId));
+        if (!remaining || remaining.size === 0) gameContexts.delete(userId);
+    });
 });
 
 // ⚡ BRAIN CLOCK STRATIFICATION SCHEDULER KEYS — one decision cycle per active user
