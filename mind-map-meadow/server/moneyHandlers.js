@@ -1,5 +1,5 @@
 import { pool } from "./db.js";
-import { localDateKey } from "./timezone.js";
+import { localDateKey, isRealDate, addDaysToDateKey } from "./timezone.js";
 
 const MAX_AMOUNT_CENTS = 100000000;
 const LOG_REWARD_COINS = 5;
@@ -7,14 +7,15 @@ const REWARDED_LOGS_PER_DAY = 6;
 const MILESTONE_REWARD_COINS = 40;
 const MAX_STAGE = 4;
 const MAX_ACTIVE_GOALS = 5;
+const MIN_GOAL_TARGET_CENTS = 1000;
+const MAX_NEW_GOALS_PER_DAY = 2;
+const MAX_BACKDATE_DAYS = 366;
 
 const CATEGORIES = {
     expense: ["Food", "Transport", "Shopping", "Bills", "Fun", "Health", "Other"],
     income: ["Salary", "Side Income", "Gift", "Other"],
     saving: ["Savings"],
 };
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function roomFor(userId) {
     return `user:${userId}`;
@@ -39,7 +40,7 @@ function normalizeNote(note) {
 export async function fetchMoneyState(db, userId) {
     const transactions = await db.query(
         `SELECT id, amount_cents, direction, category, note, occurred_on, reward_coins, savings_goal_id, created_at
-         FROM transactions WHERE user_id = $1
+         FROM transactions WHERE user_id = $1 AND deleted_at IS NULL
          ORDER BY occurred_on DESC, id DESC LIMIT 300`,
         [userId],
     );
@@ -47,8 +48,8 @@ export async function fetchMoneyState(db, userId) {
         `SELECT g.id, g.title, g.target_cents,
                 COALESCE(SUM(t.amount_cents) FILTER (WHERE t.direction = 'saving'), 0)::int AS saved_cents,
                 g.deadline, g.stage, g.status, g.building_id, g.created_at
-         FROM savings_goals g LEFT JOIN transactions t ON t.savings_goal_id = g.id
-         WHERE g.user_id = $1
+         FROM savings_goals g LEFT JOIN transactions t ON t.savings_goal_id = g.id AND t.deleted_at IS NULL
+         WHERE g.user_id = $1 AND g.deleted_at IS NULL
          GROUP BY g.id
          ORDER BY g.status, g.id`,
         [userId],
@@ -103,8 +104,9 @@ export function registerMoneyEvents(io, socket) {
         const today = localDateKey(new Date(), timeZone());
         let occurredDate = today;
         if (occurredOn !== undefined && occurredOn !== null && occurredOn !== "") {
-            if (typeof occurredOn !== "string" || !DATE_PATTERN.test(occurredOn) || Number.isNaN(Date.parse(occurredOn))) return fail("Invalid date.");
+            if (!isRealDate(occurredOn)) return fail("Invalid date.");
             if (occurredOn > today) return fail("Date can't be in the future.");
+            if (occurredOn < addDaysToDateKey(today, -MAX_BACKDATE_DAYS)) return fail("Date is too far in the past.");
             occurredDate = occurredOn;
         }
 
@@ -116,11 +118,12 @@ export function registerMoneyEvents(io, socket) {
 
                 let goal = null;
                 if (direction === "saving") {
-                    const goalResult = await client.query(`SELECT * FROM savings_goals WHERE id = $1 AND user_id = $2 AND status = 'active' FOR UPDATE`, [savingsGoalId, userId]);
+                    const goalResult = await client.query(`SELECT * FROM savings_goals WHERE id = $1 AND user_id = $2 AND status = 'active' AND deleted_at IS NULL FOR UPDATE`, [savingsGoalId, userId]);
                     goal = goalResult.rows[0];
                     if (!goal) throw new MoneyValidationError("That savings goal isn't active.");
                 }
 
+                // Includes soft-deleted rows on purpose: deleting a log must not free up a rewarded slot.
                 const rewardedToday = await client.query(`SELECT COUNT(*)::int AS n FROM transactions WHERE user_id = $1 AND reward_coins > 0 AND logged_on = $2`, [userId, today]);
                 const logReward = rewardedToday.rows[0].n < REWARDED_LOGS_PER_DAY ? LOG_REWARD_COINS : 0;
 
@@ -135,7 +138,7 @@ export function registerMoneyEvents(io, socket) {
 
                 let updatedBuilding = null;
                 if (goal) {
-                    const savedResult = await client.query(`SELECT COALESCE(SUM(amount_cents), 0)::int AS saved FROM transactions WHERE savings_goal_id = $1 AND direction = 'saving'`, [goal.id]);
+                    const savedResult = await client.query(`SELECT COALESCE(SUM(amount_cents), 0)::int AS saved FROM transactions WHERE savings_goal_id = $1 AND direction = 'saving' AND deleted_at IS NULL`, [goal.id]);
                     const saved = savedResult.rows[0].saved;
                     const newStage = Math.min(MAX_STAGE, Math.floor((saved * MAX_STAGE) / goal.target_cents));
 
@@ -176,7 +179,12 @@ export function registerMoneyEvents(io, socket) {
         if (!Number.isInteger(transactionId)) return;
         try {
             const deleted = await withTransaction(async (client) => {
-                const result = await client.query(`DELETE FROM transactions WHERE id = $1 AND user_id = $2 RETURNING reward_coins`, [transactionId, userId]);
+                await lockStatsRow(client, userId);
+                // Soft delete: the row keeps counting toward the daily rewarded-log cap.
+                const result = await client.query(`UPDATE transactions SET deleted_at = NOW() WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL RETURNING reward_coins`, [
+                    transactionId,
+                    userId,
+                ]);
                 const row = result.rows[0];
                 if (!row) return false;
                 // Revoke the logging reward so log/delete can't be used to farm coins.
@@ -197,11 +205,15 @@ export function registerMoneyEvents(io, socket) {
         const title = typeof payload.title === "string" ? payload.title.trim() : "";
 
         if (title.length < 1 || title.length > 80) return fail("Goal name must be 1–80 characters.");
-        if (!isValidCents(targetCents)) return fail("Target must be between 0.01 and 1,000,000.");
+        if (!isValidCents(targetCents)) return fail("Target must be between 10.00 and 1,000,000.");
+        if (targetCents < MIN_GOAL_TARGET_CENTS) return fail("Target must be at least 10.00.");
+
+        const today = localDateKey(new Date(), timeZone());
 
         let deadlineDate = null;
         if (deadline !== undefined && deadline !== null && deadline !== "") {
-            if (typeof deadline !== "string" || !DATE_PATTERN.test(deadline) || Number.isNaN(Date.parse(deadline))) return fail("Invalid deadline.");
+            if (!isRealDate(deadline)) return fail("Invalid deadline.");
+            if (deadline < today) return fail("Deadline can't be in the past.");
             deadlineDate = deadline;
         }
 
@@ -209,15 +221,17 @@ export function registerMoneyEvents(io, socket) {
             const building = await withTransaction(async (client) => {
                 await lockStatsRow(client, userId);
 
-                const activeCount = await client.query(`SELECT COUNT(*)::int AS n FROM savings_goals WHERE user_id = $1 AND status = 'active'`, [userId]);
+                const activeCount = await client.query(`SELECT COUNT(*)::int AS n FROM savings_goals WHERE user_id = $1 AND status = 'active' AND deleted_at IS NULL`, [userId]);
                 if (activeCount.rows[0].n >= MAX_ACTIVE_GOALS) throw new MoneyValidationError(`You can have up to ${MAX_ACTIVE_GOALS} active savings goals.`);
 
-                const goalResult = await client.query(`INSERT INTO savings_goals (user_id, title, target_cents, deadline) VALUES ($1, $2, $3, $4) RETURNING id`, [
-                    userId,
-                    title,
-                    targetCents,
-                    deadlineDate,
-                ]);
+                // Includes soft-deleted goals so create/delete can't dodge the daily cap.
+                const createdToday = await client.query(`SELECT COUNT(*)::int AS n FROM savings_goals WHERE user_id = $1 AND created_on = $2`, [userId, today]);
+                if (createdToday.rows[0].n >= MAX_NEW_GOALS_PER_DAY) throw new MoneyValidationError(`You can start up to ${MAX_NEW_GOALS_PER_DAY} new savings goals per day.`);
+
+                const goalResult = await client.query(
+                    `INSERT INTO savings_goals (user_id, title, target_cents, deadline, created_on) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+                    [userId, title, targetCents, deadlineDate, today],
+                );
                 const goalId = goalResult.rows[0].id;
 
                 const gridX = Math.floor(Math.random() * (25 - 4) + 4);
@@ -246,7 +260,11 @@ export function registerMoneyEvents(io, socket) {
         if (!Number.isInteger(goalId)) return;
         try {
             const removedBuildingId = await withTransaction(async (client) => {
-                const goalResult = await client.query(`DELETE FROM savings_goals WHERE id = $1 AND user_id = $2 RETURNING building_id`, [goalId, userId]);
+                // Soft delete: the goal keeps counting toward the per-day creation cap.
+                const goalResult = await client.query(
+                    `UPDATE savings_goals SET deleted_at = NOW() WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL RETURNING building_id`,
+                    [goalId, userId],
+                );
                 const goal = goalResult.rows[0];
                 if (!goal) return undefined;
                 if (goal.building_id) {

@@ -256,18 +256,23 @@ export class MeadowScene extends Phaser.Scene {
             match.setTexture(textureForBuilding(scene, { asset_key: match.getData("assetKey"), metadata }));
             if (match.body) alignBuildingBody(match);
 
-            const baseScaleX = match.scaleX;
-            const baseScaleY = match.scaleY;
+            // Use the stored resting scale, never the live (possibly mid-tween) one.
+            const baseScale = metadata.scale || match.getData("baseScale") || 1;
+            match.setData("baseScale", baseScale);
             scene.tweens.killTweensOf(match);
-            match.setScale(baseScaleX * 1.15, baseScaleY * 1.15);
-            scene.tweens.add({ targets: match, scaleX: baseScaleX, scaleY: baseScaleY, duration: 450, ease: "Back.easeOut" });
+            match.setScale(baseScale * 1.15); // restart the pop from a known size
+            scene.tweens.add({ targets: match, scaleX: baseScale, scaleY: baseScale, duration: 450, ease: "Back.easeOut" });
 
+            // Cancel any pending flash-end from an earlier update so only the latest one settles the tint.
+            const prevFlash = match.getData("flashTimer");
+            if (prevFlash) prevFlash.remove(false);
             match.setTint(0xffe08a);
-            scene.time.delayedCall(300, () => {
+            match.setData("flashTimer", scene.time.delayedCall(300, () => {
+                match.setData("flashTimer", null);
                 if (!match.active) return;
                 if (scene.currentSelectedBuilding === match) match.setTint(0xf1c40f);
                 else match.clearTint();
-            });
+            }));
         };
         scene.socket.on("building_updated", onBuildingUpdated);
         scene.events.once("shutdown", () => scene.socket.off("building_updated", onBuildingUpdated));

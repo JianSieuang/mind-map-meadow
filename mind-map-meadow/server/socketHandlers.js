@@ -277,8 +277,8 @@ export function registerSocketEvents(io, socket, gameContext) {
                 `SELECT g.title, g.target_cents, g.stage,
                         COALESCE(SUM(t.amount_cents) FILTER (WHERE t.direction = 'saving'), 0)::int AS saved_cents
                  FROM buildings b
-                 JOIN savings_goals g ON g.building_id = b.id AND g.user_id = b.user_id
-                 LEFT JOIN transactions t ON t.savings_goal_id = g.id
+                 JOIN savings_goals g ON g.building_id = b.id AND g.user_id = b.user_id AND g.deleted_at IS NULL
+                 LEFT JOIN transactions t ON t.savings_goal_id = g.id AND t.deleted_at IS NULL
                  WHERE b.id = $1 AND b.user_id = $2 AND b.asset_key = 'savings_project'
                  GROUP BY g.id`,
                 [buildingId, userId],

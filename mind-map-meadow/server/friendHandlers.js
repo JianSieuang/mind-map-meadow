@@ -35,6 +35,15 @@ async function emitFriendsState(io, userId) {
     });
 }
 
+// Only the render-relevant metadata leaves the host's account (no savingsGoalId etc.).
+const VISIBLE_METADATA_KEYS = ["stage", "flipX", "scale", "alpha"];
+function visibleMetadata(metadata) {
+    const visible = {};
+    if (!metadata || typeof metadata !== "object") return visible;
+    for (const key of VISIBLE_METADATA_KEYS) if (Object.hasOwn(metadata, key)) visible[key] = metadata[key];
+    return visible;
+}
+
 export function registerFriendEvents(io, socket) {
     const userId = socket.data.userId;
 
@@ -153,7 +162,8 @@ export function registerFriendEvents(io, socket) {
             if (!host) return;
 
             const buildingsResult = await pool.query(
-                `SELECT buildings.*, tasks.title AS task_title, tasks.category AS task_category
+                `SELECT buildings.id, buildings.type, buildings.asset_key, buildings.x, buildings.y, buildings.metadata,
+                        tasks.title AS task_title, tasks.category AS task_category
                  FROM buildings LEFT JOIN tasks ON tasks.building_id = buildings.id
                  WHERE buildings.user_id = $1`,
                 [friendId],
@@ -161,7 +171,7 @@ export function registerFriendEvents(io, socket) {
 
             socket.emit("visit_state", {
                 host: { id: host.id, name: host.name, avatarUrl: host.avatar_url },
-                buildings: buildingsResult.rows,
+                buildings: buildingsResult.rows.map((b) => ({ ...b, metadata: visibleMetadata(b.metadata) })),
             });
         } catch (err) {
             console.error("❌ [Visit Friend Map Error]:", err.message);

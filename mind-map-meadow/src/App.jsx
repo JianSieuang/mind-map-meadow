@@ -13,8 +13,33 @@ import TaskDashboard from "./pages/TaskDashboard";
 import LoginPage from "./pages/LoginPage";
 import QuickAddMoney from "./components/QuickAddMoney";
 import { browserTimeZone } from "./utils/dates";
+import { escapeHtml } from "./utils/html";
 
 const socket = io({ autoConnect: false, withCredentials: true, auth: { timezone: browserTimeZone() } });
+
+// HTML for BuildingCard (rendered via dangerouslySetInnerHTML) when inspecting a friend's
+// building. Every interpolated value is escaped — this is another account's data.
+function visitBuildingCardHtml(building) {
+    if (!building) return null;
+    if (building.task_title) {
+        return `<strong style="color:#4ade80;">💎 ${escapeHtml(building.task_title)}</strong><br/><small style="color:#a0a0b8;">Category: ${escapeHtml(building.task_category)}</small>`;
+    }
+    if (building.asset_key === "savings_project") {
+        let meta = building.metadata;
+        if (typeof meta === "string") {
+            try {
+                meta = JSON.parse(meta);
+            } catch {
+                meta = null;
+            }
+        }
+        const stage = Number.parseInt(meta?.stage, 10);
+        const stageText = Number.isFinite(stage) ? ` · Stage ${stage}/4` : "";
+        // Title is private — only show a generic label
+        return `<strong style="color:#facc15;">🏗️ Savings project${escapeHtml(stageText)}</strong>`;
+    }
+    return null;
+}
 
 export default function App() {
     const gameContainerRef = useRef(null);
@@ -35,6 +60,7 @@ export default function App() {
     const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
     const [moneyToast, setMoneyToast] = useState(null); // { kind: "reward" | "error", text }
     const moneyToastTimer = useRef(null);
+    const moneyToastRef = useRef(null); // mirrors the visible money toast, for merging inside socket handlers
 
     // Only one of Profile/Agenda/Friends can be open at a time — they render in the same spot
     const [activeHudPanel, setActiveHudPanel] = useState(null); // null | "profile" | "agenda" | "friends"
@@ -114,10 +140,30 @@ export default function App() {
             if (state.savingsGoals) setSavingsGoals(state.savingsGoals);
         });
 
+        // Back-to-back rewards (e.g. log reward + milestone reward) merge into the visible
+        // reward toast instead of replacing it. Errors always show on their own.
         const showMoneyToast = (toast) => {
             clearTimeout(moneyToastTimer.current);
-            setMoneyToast(toast);
-            moneyToastTimer.current = setTimeout(() => setMoneyToast(null), 3500);
+            const current = moneyToastRef.current;
+            let next = toast;
+            if (toast.kind === "reward" && current && current.kind === "reward") {
+                const coins = (current.coins || 0) + (toast.coins || 0);
+                next = {
+                    kind: "reward",
+                    coins,
+                    text: `🪙 +${coins}`,
+                    detail: [current.detail, toast.detail].filter(Boolean).join(" · "),
+                };
+            }
+            moneyToastRef.current = next;
+            setMoneyToast(next);
+            const timer = setTimeout(() => {
+                if (moneyToastTimer.current !== timer) return; // superseded by a newer toast
+                moneyToastTimer.current = null;
+                moneyToastRef.current = null;
+                setMoneyToast(null);
+            }, 3500);
+            moneyToastTimer.current = timer;
         };
 
         socket.on("refresh_money", (data) => {
@@ -127,7 +173,8 @@ export default function App() {
         });
 
         socket.on("money_reward", (data) => {
-            showMoneyToast({ kind: "reward", text: `🪙 +${data.coins}`, detail: data.reason });
+            const coins = Number(data.coins) || 0;
+            showMoneyToast({ kind: "reward", coins, text: `🪙 +${coins}`, detail: data.reason });
         });
 
         socket.on("money_error", (message) => {
@@ -173,11 +220,7 @@ export default function App() {
                 scene.enterVisitMode(data.buildings, (id) => {
                     setSelectedBuildingId(id);
                     const building = data.buildings.find((b) => b.id === id);
-                    setSelectedBuildingData(
-                        building && building.task_title
-                            ? `<strong style="color:#4ade80;">💎 ${building.task_title}</strong><br/><small style="color:#a0a0b8;">Category: ${building.task_category}</small>`
-                            : null,
-                    );
+                    setSelectedBuildingData(visitBuildingCardHtml(building));
                 });
             }
         });
@@ -203,6 +246,8 @@ export default function App() {
             socket.off("money_reward");
             socket.off("money_error");
             clearTimeout(moneyToastTimer.current);
+            moneyToastTimer.current = null;
+            moneyToastRef.current = null;
         };
     }, [user]);
 
