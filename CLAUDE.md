@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Plan, team and workflow
+
+- **The plan lives in [`docs/PLAN.md`](docs/PLAN.md)** (vision, principles, roadmap, Builder Loop design, integrations, size ratios). Art rules: [`docs/ART_STYLE_GUIDE.md`](docs/ART_STYLE_GUIDE.md). Read both before starting feature work.
+- Claude acts as **Project Lead**: plans, writes a shared contract, delegates to the team in `.claude/agents/` (`backend-dev`, `frontend-dev`, `art-game-dev`, `qa-reviewer`, `product-strategist`), reviews and integrates. Devs own disjoint file sets so they can work in parallel; only the lead commits.
+- Flow: plan + contract → devs build → `qa-reviewer` on the diff → lead verifies (`node --check`, `npm run build`, browser) → commit on `feature/<name>` → merge to `dev` → `staging` after a browser test → `main` only with the owner's go-ahead.
+
 ## Repo layout
 
 This repo is a Docker Compose stack with one application inside it:
