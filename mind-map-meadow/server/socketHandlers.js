@@ -5,6 +5,19 @@ import { generateTodayInstances } from "./recurringTasks.js";
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function formatCents(cents) {
+    return (Number(cents) / 100).toFixed(2);
+}
+
 function roomFor(userId) {
     return `user:${userId}`;
 }
@@ -253,8 +266,30 @@ export function registerSocketEvents(io, socket, gameContext) {
                 socket.emit(
                     "inspection_details",
                     `
-                    <strong style="color:#4ade80;">💎 ${data.title}</strong><br/>
-                    <small style="color:#a0a0b8;">Category: ${data.category}</small>
+                    <strong style="color:#4ade80;">💎 ${escapeHtml(data.title)}</strong><br/>
+                    <small style="color:#a0a0b8;">Category: ${escapeHtml(data.category)}</small>
+                `,
+                );
+                return;
+            }
+
+            const savings = await pool.query(
+                `SELECT g.title, g.target_cents, g.stage,
+                        COALESCE(SUM(t.amount_cents) FILTER (WHERE t.direction = 'saving'), 0)::int AS saved_cents
+                 FROM buildings b
+                 JOIN savings_goals g ON g.building_id = b.id AND g.user_id = b.user_id
+                 LEFT JOIN transactions t ON t.savings_goal_id = g.id
+                 WHERE b.id = $1 AND b.user_id = $2 AND b.asset_key = 'savings_project'
+                 GROUP BY g.id`,
+                [buildingId, userId],
+            );
+            if (savings.rows.length > 0) {
+                const goal = savings.rows[0];
+                socket.emit(
+                    "inspection_details",
+                    `
+                    <strong style="color:#facc15;">🏗️ ${escapeHtml(goal.title)}</strong><br/>
+                    <small style="color:#a0a0b8;">${formatCents(goal.saved_cents)}/${formatCents(goal.target_cents)} saved · Stage ${goal.stage}/4</small>
                 `,
                 );
             }

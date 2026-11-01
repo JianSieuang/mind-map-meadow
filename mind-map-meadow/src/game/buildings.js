@@ -1,22 +1,30 @@
 import Phaser from "phaser";
 
+// Savings projects swap texture per milestone stage; everything else maps asset_key → texture 1:1.
+export function textureForBuilding(scene, b) {
+    const assetKey = (b.asset_key || "").toLowerCase();
+    const stage = b.metadata?.stage;
+    const textureHandle = assetKey === "savings_project" && Number.isInteger(stage) ? `savings_project_${stage}_asset` : `${assetKey}_asset`;
+    return scene.textures.exists(textureHandle) ? textureHandle : "library_asset";
+}
+
+// Keeps the 48x48 physics footprint anchored to the bottom tile, however tall the art is.
+export function alignBuildingBody(sprite) {
+    sprite.body.setSize(48, 48);
+    sprite.body.setOffset(0, sprite.displayHeight - 48);
+}
+
 export function renderBuilding(scene, b, onInspect, group, socket, options = {}) {
     const { readOnly = false } = options;
-    const textureHandle = `${b.asset_key.toLowerCase()}_asset`;
 
-    const verifiedTexture = scene.textures.exists(textureHandle) ? textureHandle : "library_asset";
-
-    const elementSprite = scene.add.sprite(b.x, b.y + 24, verifiedTexture);
+    const elementSprite = scene.add.sprite(b.x, b.y + 24, textureForBuilding(scene, b));
     elementSprite.setOrigin(0.5, 1.0);
     elementSprite.setData("id", b.id);
     elementSprite.setData("assetKey", b.asset_key);
+    elementSprite.setData("metadata", b.metadata || {});
 
     scene.physics.add.existing(elementSprite, true);
-    elementSprite.body.setSize(48, 48);
-
-    const assetHeight = elementSprite.displayHeight;
-    const computedOffsetCorrectionY = assetHeight - 48;
-    elementSprite.body.setOffset(0, computedOffsetCorrectionY);
+    alignBuildingBody(elementSprite);
 
     if (b.metadata) {
         if (b.metadata.flipX) elementSprite.setFlipX(b.metadata.flipX);

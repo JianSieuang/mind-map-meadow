@@ -10,6 +10,7 @@ import { pool } from "./server/db.js";
 import { runMigrations } from "./db/index.js";
 import { registerSocketEvents } from "./server/socketHandlers.js";
 import { registerFriendEvents } from "./server/friendHandlers.js";
+import { registerMoneyEvents, fetchMoneyState } from "./server/moneyHandlers.js";
 import { triggerLlamaBrainDecision } from "./server/aiBrain.js";
 import { generateTodayInstances } from "./server/recurringTasks.js";
 import { sessionMiddleware } from "./server/sessionMiddleware.js";
@@ -103,6 +104,7 @@ io.on("connection", (socket) => {
             const statsResult = await pool.query("SELECT * FROM player_stats WHERE user_id = $1 LIMIT 1", [userId]);
             const tasksResult = await pool.query("SELECT * FROM tasks WHERE user_id = $1 ORDER BY due_date ASC, id ASC", [userId]);
             const recurringTasksResult = await pool.query("SELECT * FROM recurring_tasks WHERE user_id = $1 ORDER BY id ASC", [userId]);
+            const money = await fetchMoneyState(pool, userId);
 
             socket.emit("init_state", {
                 player: gameContext.playerPos,
@@ -111,6 +113,8 @@ io.on("connection", (socket) => {
                 stats: statsResult.rows[0],
                 tasks: tasksResult.rows,
                 recurringTasks: recurringTasksResult.rows,
+                transactions: money.transactions,
+                savingsGoals: money.savingsGoals,
             });
             socket.emit("ai_thought_broadcast", { thought: gameContext.aiCurrentThought });
         } catch (err) {
@@ -120,6 +124,7 @@ io.on("connection", (socket) => {
 
     registerSocketEvents(io, socket, gameContext);
     registerFriendEvents(io, socket);
+    registerMoneyEvents(io, socket);
 
     // Drop the user's in-memory context once their last tab/device disconnects, so
     // the physics loop and AI interval stop doing work for logged-out users.
