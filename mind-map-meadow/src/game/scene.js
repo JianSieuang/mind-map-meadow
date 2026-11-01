@@ -146,7 +146,7 @@ export class MeadowScene extends Phaser.Scene {
             scene.clearActiveMenu();
             scene.clearGroundPrompt();
             scene.gridHighlight.setVisible(false);
-            (buildings || []).forEach((b) => renderBuilding(scene, b, onInspect, window.buildingsGroup, scene.socket, { readOnly: true }));
+            (buildings || []).forEach((b) => scene.safeRenderBuilding(b, onInspect, { readOnly: true }));
         };
 
         scene.exitVisitMode = () => {
@@ -213,10 +213,27 @@ export class MeadowScene extends Phaser.Scene {
             }
         };
 
-        // Network Socket Protocol Hook Channels
-        scene.socket.on("init_state", (state) => {
-            window.player.setPosition(state.player.x, state.player.y);
-            window.aiCompanion.setPosition(state.ai.x, state.ai.y);
+        // Render one building, isolating failures so a single bad row can't abort the
+        // whole init_state loop (which would leave the meadow looking empty).
+        const safeRenderBuilding = (b, onInspect, options) => {
+            try {
+                renderBuilding(scene, b, onInspect, window.buildingsGroup, scene.socket, options);
+            } catch (err) {
+                console.error("❌ [Building Render Failed]:", b && b.id, err);
+            }
+        };
+        scene.safeRenderBuilding = safeRenderBuilding;
+
+        // Network Socket Protocol Hook Channels.
+        // Every handler is a named function removed by reference on shutdown/destroy —
+        // the socket is shared with App.jsx, so never call socket.off(event) without a handler.
+        const onInitState = (state) => {
+            if (!state) return;
+            // A reconnect while touring a friend's meadow shouldn't swap their buildings
+            // out for ours; leaving the visit re-requests init_state anyway.
+            if (scene.isVisiting) return;
+            if (state.player) window.player.setPosition(state.player.x, state.player.y);
+            if (state.ai) window.aiCompanion.setPosition(state.ai.x, state.ai.y);
             window.buildingsGroup.getChildren().forEach((child) => {
                 const blip = child.getData("minimapBlip");
                 if (blip) blip.destroy();
@@ -225,31 +242,32 @@ export class MeadowScene extends Phaser.Scene {
             scene.clearActiveMenu();
             scene.clearGroundPrompt();
             scene.gridHighlight.setVisible(false);
-            if (state.buildings) {
-                state.buildings.forEach((b) => renderBuilding(scene, b, scene.onBuildingInspect, window.buildingsGroup, scene.socket));
-            }
-        });
+            (state.buildings || []).forEach((b) => safeRenderBuilding(b, scene.onBuildingInspect));
+        };
 
-        scene.socket.on("state_update", (state) => {
-            window.aiCompanion.setPosition(state.ai.x, state.ai.y);
-        });
+        const onStateUpdate = (state) => {
+            if (state && state.ai) window.aiCompanion.setPosition(state.ai.x, state.ai.y);
+        };
 
-        scene.socket.on("building_spawned", (buildingData) => {
-            renderBuilding(scene, buildingData, scene.onBuildingInspect, window.buildingsGroup, scene.socket);
-        });
+        const onBuildingSpawned = (buildingData) => {
+            if (scene.isVisiting) return; // friend's map on screen; leaving re-requests init_state
+            safeRenderBuilding(buildingData, scene.onBuildingInspect);
+        };
 
-        scene.socket.on("building_moved", (data) => {
+        const onBuildingMoved = (data) => {
+            if (scene.isVisiting) return; // friend's map on screen; leaving re-requests init_state
             const match = window.buildingsGroup.getChildren().find((child) => child.getData("id") === data.id);
             if (match) {
                 match.setPosition(data.x, data.y + 24);
                 if (match.body) match.body.updateFromGameObject();
             }
-        });
+        };
 
         // Savings-goal milestone: swap to the new stage texture and celebrate.
         const onBuildingUpdated = (data) => {
+            if (scene.isVisiting) return; // friend's map on screen; leaving re-requests init_state
             const match = window.buildingsGroup.getChildren().find((child) => child.getData("id") === data.id);
-            if (!match) return; // e.g. currently visiting a friend's meadow
+            if (!match) return;
 
             const metadata = data.metadata || {};
             match.setData("metadata", metadata);
@@ -274,10 +292,8 @@ export class MeadowScene extends Phaser.Scene {
                 else match.clearTint();
             }));
         };
-        scene.socket.on("building_updated", onBuildingUpdated);
-        scene.events.once("shutdown", () => scene.socket.off("building_updated", onBuildingUpdated));
-
-        scene.socket.on("building_removed", (data) => {
+        const onBuildingRemoved = (data) => {
+            if (scene.isVisiting) return; // friend's map on screen; leaving re-requests init_state
             const match = window.buildingsGroup.getChildren().find((child) => child.getData("id") === data.id);
             if (match) {
                 if (scene.currentSelectedBuilding === match) scene.clearActiveMenu();
@@ -285,12 +301,36 @@ export class MeadowScene extends Phaser.Scene {
                 if (blip) blip.destroy();
                 match.destroy();
             }
-        });
+        };
 
-        // Ask the server for the world snapshot now that every listener above is registered.
-        // Socket.IO buffers this emit if the connection handshake hasn't finished yet, so
-        // this is safe regardless of whether the socket or the asset preload finished first.
-        scene.socket.emit("request_init_state");
+        // Ask for the world snapshot on every (re)connect: a server restart or network blip
+        // gives us a fresh server-side socket that has never sent us init_state.
+        const requestInitState = () => scene.socket.emit("request_init_state");
+
+        const socketHandlers = {
+            init_state: onInitState,
+            state_update: onStateUpdate,
+            building_spawned: onBuildingSpawned,
+            building_moved: onBuildingMoved,
+            building_updated: onBuildingUpdated,
+            building_removed: onBuildingRemoved,
+            connect: requestInitState,
+        };
+        Object.entries(socketHandlers).forEach(([event, handler]) => scene.socket.on(event, handler));
+
+        let socketHandlersRemoved = false;
+        const removeSocketHandlers = () => {
+            if (socketHandlersRemoved) return;
+            socketHandlersRemoved = true;
+            Object.entries(socketHandlers).forEach(([event, handler]) => scene.socket.off(event, handler));
+        };
+        scene.events.once("shutdown", removeSocketHandlers);
+        scene.events.once("destroy", removeSocketHandlers);
+
+        // Every listener above is registered, so it's safe to ask now. If the socket isn't
+        // connected yet, the "connect" handler above sends the request once it is (no
+        // separate buffered emit, so we never get two snapshots on first load).
+        if (scene.socket.connected) requestInitState();
 
         scene.input.on("drag", (pointer, gameObject, dragX, dragY) => {
             if (gameObject === scene.minimapDragZone) {
