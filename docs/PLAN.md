@@ -48,7 +48,7 @@ Plus **decorations** (bought with coins; boost nearby buildings), **world landma
 - Simulated result: a steady player (4 tasks/day) gets Lv2 on day 2, first expansion week 1, first Lv3 week 3, first landmark week 5. A burst player (15 tasks one day/week) progresses far slower — by design.
 
 ### Decisions (owner, 2026-11-02)
-1. **NPC workers: required.** A building only earns while staffed by a worker; houses provide workers (Cottage 1 / House 2 / Manor 3 beds) plus a base pool and weekly villagers. (Product Strategist preferred "buildings just produce" — owner chose workers for the strategy layer; keep staffing fast, e.g. auto-assign by default.)
+1. **NPC workers: required, and a separate scarce resource.** Workers are counted apart from buildings: you might own 10 buildings but have only 2 workers, so only 2 earn. A building only earns while staffed. Workers come from a base pool, houses (Cottage 1 / House 2 / Manor 4 beds) and **mystery summons: each town level up gives one summon that reveals a worker of random level (higher level earns more)**. Summons are never sold for real money and every result is useful. (Product Strategist preferred "buildings just produce" — owner chose workers for the strategy layer; auto-assign by default, with priority/off controls to choose who works.)
 2. **Zone expansion is in v1:** start 12×10 tiles, unlock land with town level + coins.
 3. **Economy:** tasks pay a flat 10 coins (first 5/day) instead of `minutes × 1.5`; **Town Level replaces the player level** (existing levels grandfathered).
 4. **Burst players get a slow catch-up:** overflow effort turns into progress over the following days you visit — big days still help, consistency stays faster.
@@ -86,5 +86,5 @@ Today the player is **32×48 next to 48×48 buildings** — a person almost as t
 ## How the team works
 - **Project Lead (Claude):** plans, writes the shared contract, splits work so nobody edits the same files, reviews, builds, commits.
 - **Team** (`.claude/agents/`): `backend-dev` (server, db), `frontend-dev` (React UI), `art-game-dev` (pixel art + Phaser), `qa-reviewer` (read-only review before every commit), `product-strategist` (read-only devil's advocate).
-- **Flow per feature:** plan + contract → devs build in parallel → QA review → lead verifies (build, checks) → commit on `feature/<name>` → merge to `dev`.
+- **Flow per feature:** plan + contract → devs build in parallel → QA review → lead verifies (build, checks) → commit on `feature/<name>` → merge to `dev`. Major features also get a QA run that tests every feature for real, then an independent review by Fable, before merging.
 - **Branches:** `feature/*` → `dev` (builds) → `staging` (tested in the browser) → `main` (live; owner's go-ahead only).
