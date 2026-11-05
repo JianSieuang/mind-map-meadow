@@ -1,41 +1,29 @@
 import React from "react";
+import { Icon } from "./Sprites";
+import { btn } from "./hudStyles";
 
-export default function HudIconRail({ isProfileOpen, isAgendaOpen, isFriendsOpen, onToggleProfile, onToggleAgenda, onToggleFriends, pendingCount, friendRequestCount }) {
+function RailButton({ icon, title, active, badge, attention, hudKey, onClick }) {
+    const tone = attention ? "next" : active ? "pressed" : "muted";
     return (
-        <div className="fixed top-6 right-6 z-30 flex flex-col gap-3">
-            <button
-                onClick={onToggleProfile}
-                title="Profile"
-                className={`w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-lg border transition ${
-                    isProfileOpen ? "bg-indigo-600 border-indigo-400 text-white" : "bg-[#23232e]/90 border-slate-700 text-slate-200 hover:border-indigo-400"
-                }`}
-            >
-                👤
-            </button>
-            <button
-                onClick={onToggleAgenda}
-                title="Agenda"
-                className={`relative w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-lg border transition ${
-                    isAgendaOpen ? "bg-indigo-600 border-indigo-400 text-white" : "bg-[#23232e]/90 border-slate-700 text-slate-200 hover:border-indigo-400"
-                }`}
-            >
-                📋
-                {pendingCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-yellow-500 text-[#1e1e24] text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{pendingCount}</span>
-                )}
-            </button>
-            <button
-                onClick={onToggleFriends}
-                title="Friends"
-                className={`relative w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-lg border transition ${
-                    isFriendsOpen ? "bg-indigo-600 border-indigo-400 text-white" : "bg-[#23232e]/90 border-slate-700 text-slate-200 hover:border-indigo-400"
-                }`}
-            >
-                👥
-                {friendRequestCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-yellow-500 text-[#1e1e24] text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{friendRequestCount}</span>
-                )}
-            </button>
+        <button onClick={onClick} title={title} aria-label={title} aria-pressed={active} data-hud={hudKey} className={btn(tone, "relative !p-0 w-11 h-11 lg:w-12 lg:h-12")}>
+            <Icon name={icon} />
+            {badge > 0 && <span className="font-pixel absolute -top-2 -right-2 bg-[#2b1e1a] text-[#ffd65a] text-xs min-w-5 h-5 px-1 rounded-sm flex items-center justify-center leading-none">{badge}</span>}
+        </button>
+    );
+}
+
+// activePanel is the one open panel, or null. showBuilder is false while touring a
+// friend's meadow, since inventory, workers and summons are all about your own town.
+// showWorkers and showFriends wait until they mean something (see hudReveal).
+export default function HudIconRail({ activePanel, onTogglePanel, pendingCount, friendRequestCount, inventoryCount, summonCount, showBuilder, showWorkers, showFriends, onSummon }) {
+    return (
+        <div className="fixed top-4 right-4 lg:top-6 lg:right-6 z-30 flex flex-col gap-2 lg:gap-3">
+            <RailButton icon="profile" title="Profile" active={activePanel === "profile"} onClick={() => onTogglePanel("profile")} />
+            <RailButton icon="tasks" title="Agenda" active={activePanel === "agenda"} badge={pendingCount} onClick={() => onTogglePanel("agenda")} />
+            {showBuilder && <RailButton icon="inventory" title="Inventory" active={activePanel === "inventory"} badge={inventoryCount} onClick={() => onTogglePanel("inventory")} />}
+            {showBuilder && showWorkers && <RailButton icon="workers" title="Workers" active={activePanel === "workers"} onClick={() => onTogglePanel("workers")} />}
+            {showFriends && <RailButton icon="friends" title="Friends" active={activePanel === "friends"} badge={friendRequestCount} onClick={() => onTogglePanel("friends")} />}
+            {showBuilder && summonCount > 0 && <RailButton icon="summon" title={`Summon (${summonCount})`} badge={summonCount} attention hudKey="summon" onClick={onSummon} />}
         </div>
     );
 }

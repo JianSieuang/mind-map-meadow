@@ -11,16 +11,23 @@ import { runMigrations } from "./db/index.js";
 import { registerSocketEvents } from "./server/socketHandlers.js";
 import { registerFriendEvents } from "./server/friendHandlers.js";
 import { registerMoneyEvents, fetchMoneyState } from "./server/moneyHandlers.js";
+import { registerBuilderEvents, runVisit } from "./server/builderHandlers.js";
 import { triggerLlamaBrainDecision } from "./server/aiBrain.js";
 import { generateTodayInstances } from "./server/recurringTasks.js";
-import { sessionMiddleware } from "./server/sessionMiddleware.js";
+import { sessionMiddleware, sessionRoomFor } from "./server/sessionMiddleware.js";
+import { allowRequest, attachRateLimit } from "./server/socketGuards.js";
 import authRouter from "./server/auth.js";
 import { isValidTimeZone } from "./server/timezone.js";
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { allowRequest });
 const PORT = process.env.PORT || 5000;
+
+// Production sits behind one TLS-terminating proxy, and the secure session cookie is only
+// set when Express trusts its X-Forwarded-Proto.
+if (process.env.NODE_ENV === "production") app.set("trust proxy", 1);
+app.set("io", io); // auth.js drops a session's sockets when that session ends
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,6 +88,8 @@ io.on("connection", (socket) => {
 
     socket.data.userId = userId;
     socket.join(roomFor(userId));
+    socket.join(sessionRoomFor(socket.request.session.id));
+    attachRateLimit(socket);
 
     const reportedTimeZone = socket.handshake.auth?.timezone;
     socket.data.timezone = isValidTimeZone(reportedTimeZone) ? reportedTimeZone : "UTC";
@@ -100,7 +109,9 @@ io.on("connection", (socket) => {
     socket.on("request_init_state", async () => {
         try {
             await userReady;
-            const buildingsResult = await pool.query("SELECT * FROM buildings WHERE user_id = $1", [userId]);
+            // Opening the app is a "visit": it can release a catch-up building, and the
+            // payload below has to reflect that.
+            const builder = await runVisit(io, userId, socket.data.timezone);
             const statsResult = await pool.query("SELECT * FROM player_stats WHERE user_id = $1 LIMIT 1", [userId]);
             const tasksResult = await pool.query("SELECT * FROM tasks WHERE user_id = $1 ORDER BY due_date ASC, id ASC", [userId]);
             const recurringTasksResult = await pool.query("SELECT * FROM recurring_tasks WHERE user_id = $1 ORDER BY id ASC", [userId]);
@@ -109,12 +120,13 @@ io.on("connection", (socket) => {
             socket.emit("init_state", {
                 player: gameContext.playerPos,
                 ai: gameContext.aiPos,
-                buildings: buildingsResult.rows,
+                buildings: builder.placed,
                 stats: statsResult.rows[0],
                 tasks: tasksResult.rows,
                 recurringTasks: recurringTasksResult.rows,
                 transactions: money.transactions,
                 savingsGoals: money.savingsGoals,
+                builder,
             });
             socket.emit("ai_thought_broadcast", { thought: gameContext.aiCurrentThought });
         } catch (err) {
@@ -125,6 +137,7 @@ io.on("connection", (socket) => {
     registerSocketEvents(io, socket, gameContext);
     registerFriendEvents(io, socket);
     registerMoneyEvents(io, socket);
+    registerBuilderEvents(io, socket, gameContext);
 
     // Drop the user's in-memory context once their last tab/device disconnects, so
     // the physics loop and AI interval stop doing work for logged-out users.

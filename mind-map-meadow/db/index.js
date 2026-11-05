@@ -23,17 +23,29 @@ export async function runMigrations(pool) {
         "12_money.sql",
         "13_player_stats_username_default.sql",
         "14_money_hardening.sql",
+        "15_builder_loop.sql",
     ];
 
+    await pool.query("CREATE TABLE IF NOT EXISTS schema_migrations (filename VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP DEFAULT NOW())");
+    const applied = new Set((await pool.query("SELECT filename FROM schema_migrations")).rows.map((r) => r.filename));
+
+    // Each file runs once, atomically with its record. Databases that predate this table
+    // re-run the old idempotent files one last time and get them recorded.
     for (const file of migrationFiles) {
-        const filePath = path.join(__dirname, file);
+        if (applied.has(file)) continue;
+        const client = await pool.connect();
         try {
-            const sql = fs.readFileSync(filePath, "utf8");
-            await pool.query(sql);
-            console.log(`✅ [Database Migration] Successfully checked/executed: ${file}`);
+            await client.query("BEGIN");
+            await client.query(fs.readFileSync(path.join(__dirname, file), "utf8"));
+            await client.query("INSERT INTO schema_migrations (filename) VALUES ($1)", [file]);
+            await client.query("COMMIT");
+            console.log(`✅ [Database Migration] Applied: ${file}`);
         } catch (err) {
+            await client.query("ROLLBACK").catch(() => {});
             console.error(`❌ [Database Migration Error] Failed running file ${file}:`, err.message);
             throw err; // Stop application boot if database layout breaks
+        } finally {
+            client.release();
         }
     }
     console.log("🗄️ [Database] All structural tables validated.");

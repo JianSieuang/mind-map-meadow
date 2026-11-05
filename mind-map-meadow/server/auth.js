@@ -1,6 +1,7 @@
 import express from "express";
 import { OAuth2Client } from "google-auth-library";
 import { pool } from "./db.js";
+import { SESSION_COOKIE_OPTIONS, sessionRoomFor } from "./sessionMiddleware.js";
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const router = express.Router();
@@ -11,6 +12,24 @@ const VALID_AUDIENCES = [process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT
 
 function toPublicUser(user) {
     return { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatar_url };
+}
+
+// A socket's authorisation is read once, at its handshake, so a socket has to be dropped
+// when the session behind it ends.
+function disconnectSessionSockets(req, sessionId) {
+    req.app.get("io")?.in(sessionRoomFor(sessionId)).disconnectSockets(true);
+}
+
+// A new session id at login, so an id planted in the browser beforehand is worthless.
+function regenerateSession(req) {
+    const oldSessionId = req.sessionID;
+    return new Promise((resolve, reject) => {
+        req.session.regenerate((err) => {
+            if (err) return reject(err);
+            disconnectSessionSockets(req, oldSessionId);
+            resolve();
+        });
+    });
 }
 
 router.post("/google", async (req, res) => {
@@ -44,8 +63,9 @@ router.post("/google", async (req, res) => {
         }
 
         // Runs on every login so accounts created before the username-default fix self-heal.
-        await pool.query("INSERT INTO player_stats (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", [user.id]);
+        await pool.query("INSERT INTO player_stats (user_id, builder_migrated, last_active_at) VALUES ($1, true, NOW()) ON CONFLICT (user_id) DO NOTHING", [user.id]);
 
+        await regenerateSession(req);
         req.session.userId = user.id;
         res.json({ user: toPublicUser(user) });
     } catch (err) {
@@ -68,12 +88,14 @@ router.get("/me", async (req, res) => {
 });
 
 router.post("/logout", (req, res) => {
+    const sessionId = req.sessionID;
     req.session.destroy((err) => {
         if (err) {
             console.error("❌ [Logout Error]:", err.message);
             return res.status(500).json({ error: "Logout failed" });
         }
-        res.clearCookie("connect.sid");
+        disconnectSessionSockets(req, sessionId);
+        res.clearCookie("connect.sid", SESSION_COOKIE_OPTIONS);
         res.json({ ok: true });
     });
 });

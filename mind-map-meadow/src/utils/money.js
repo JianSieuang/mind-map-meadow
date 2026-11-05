@@ -1,36 +1,19 @@
 import { localDateKey } from "./dates";
 
 export const DIRECTIONS = [
-    { key: "expense", label: "Expense", icon: "💸" },
-    { key: "income", label: "Income", icon: "💵" },
-    { key: "saving", label: "Save", icon: "🏦" },
+    { key: "expense", label: "Expense" },
+    { key: "income", label: "Income" },
+    { key: "saving", label: "Save" },
 ];
 
 export const CATEGORIES = {
-    expense: [
-        { key: "Food", icon: "🍜" },
-        { key: "Transport", icon: "🚌" },
-        { key: "Shopping", icon: "🛍️" },
-        { key: "Bills", icon: "🧾" },
-        { key: "Fun", icon: "🎮" },
-        { key: "Health", icon: "💊" },
-        { key: "Other", icon: "📦" },
-    ],
-    income: [
-        { key: "Salary", icon: "💼" },
-        { key: "Side Income", icon: "🛠️" },
-        { key: "Gift", icon: "🎁" },
-        { key: "Other", icon: "📦" },
-    ],
-    saving: [{ key: "Savings", icon: "🏦" }],
+    expense: ["Food", "Transport", "Shopping", "Bills", "Fun", "Health", "Other"],
+    income: ["Salary", "Side Income", "Gift", "Other"],
+    saving: ["Savings"],
 };
 
-export function categoryIcon(direction, category) {
-    const match = (CATEGORIES[direction] || []).find((c) => c.key === category);
-    return match ? match.icon : "📦";
-}
-
 export const MAX_AMOUNT_CENTS = 100_000_000; // 1,000,000.00
+export const MIN_SAVINGS_TARGET_CENTS = 1000; // 10.00, same floor the server enforces
 
 export function parseAmountToCents(input) {
     const value = Number(String(input ?? "").replace(/,/g, "").trim());

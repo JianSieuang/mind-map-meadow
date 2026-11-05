@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { initPhaser } from "./game";
 import { MINIMAP_CONFIG } from "./game/config";
 import { ALL_DAYS } from "./utils/duration";
+import "./components/hud.css";
 import ProfilePanel from "./components/ProfilePanel";
 import AgendaPanel from "./components/AgendaPanel";
 import FriendsPanel from "./components/FriendsPanel";
@@ -12,8 +13,20 @@ import BuildingCard from "./components/BuildingCard";
 import TaskDashboard from "./pages/TaskDashboard";
 import LoginPage from "./pages/LoginPage";
 import QuickAddMoney from "./components/QuickAddMoney";
+import BuilderHud, { BuilderActions } from "./components/BuilderHud";
+import InventoryPanel from "./components/InventoryPanel";
+import WorkersPanel from "./components/WorkersPanel";
+import SummonReveal from "./components/SummonReveal";
+import ToastStack from "./components/ToastStack";
+import CoachBubble from "./components/CoachBubble";
+import LevelUpBanner from "./components/LevelUpBanner";
+import ConnectionBanner from "./components/ConnectionBanner";
+import { Icon } from "./components/Sprites";
+import { PANEL_CLASS, btn } from "./components/hudStyles";
 import { browserTimeZone } from "./utils/dates";
-import { escapeHtml } from "./utils/html";
+import { taskRewardPreview } from "./utils/rewards";
+import { buildingName, builderErrorMessage, collectableCoins, decorationName, lineBuildingName } from "./utils/builder";
+import { advanceFirstDay, coachMessage, finishFirstDay, hudReveal, markTipSeen } from "./utils/tutorial";
 
 // One socket for the page's lifetime. Under Vite HMR this module re-executes; reuse the
 // existing socket so the already-running Phaser scene (which holds a reference to it)
@@ -21,29 +34,24 @@ import { escapeHtml } from "./utils/html";
 const socket = import.meta.hot?.data.socket ?? io({ autoConnect: false, withCredentials: true, auth: { timezone: browserTimeZone() } });
 if (import.meta.hot) import.meta.hot.data.socket = socket;
 
-// HTML for BuildingCard (rendered via dangerouslySetInnerHTML) when inspecting a friend's
-// building. Every interpolated value is escaped — this is another account's data.
-function visitBuildingCardHtml(building) {
-    if (!building) return null;
-    if (building.task_title) {
-        return `<strong style="color:#4ade80;">💎 ${escapeHtml(building.task_title)}</strong><br/><small style="color:#a0a0b8;">Category: ${escapeHtml(building.task_category)}</small>`;
-    }
-    if (building.asset_key === "savings_project") {
-        let meta = building.metadata;
-        if (typeof meta === "string") {
-            try {
-                meta = JSON.parse(meta);
-            } catch {
-                meta = null;
-            }
-        }
-        const stage = Number.parseInt(meta?.stage, 10);
-        const stageText = Number.isFinite(stage) ? ` · Stage ${stage}/4` : "";
-        // Title is private — only show a generic label
-        return `<strong style="color:#facc15;">🏗️ Savings project${escapeHtml(stageText)}</strong>`;
-    }
-    return null;
-}
+// Every player action goes through this. An emit made while offline would sit in the
+// socket's buffer and replay on reconnect, long after the player has moved on.
+const emitAction = (event, payload) => {
+    if (!socket.connected) return false;
+    socket.emit(event, payload);
+    return true;
+};
+
+// Same breakpoint the HUD's lg: classes switch at. Below it, panels, the minimap and the
+// building card would share the screen's small free space, so only one shows at a time.
+const isNarrowViewport = () => window.matchMedia("(max-width: 1023px)").matches;
+
+const STORAGE_TICK_MS = 30000;
+const SUMMON_TIMEOUT_MS = 8000;
+const FIRST_CONNECT_GRACE_MS = 2000;
+const HUD_TOP_PX = 16;
+const MINIMAP_GAP_PX = 8; // between the map panel and the HUD above and below it
+const RAIL_CLEARANCE_PX = 68; // the icon rail's column on the right, same as the top-left stack's right-[68px]
 
 export default function App() {
     const gameContainerRef = useRef(null);
@@ -53,7 +61,10 @@ export default function App() {
     const [user, setUser] = useState(undefined);
     const [authError, setAuthError] = useState(null);
 
-    const [stats, setStats] = useState({ level: 1, xp: 0, coins: 0, calories_burned: 0 });
+    const [stats, setStats] = useState({ coins: 0 });
+    const [builder, setBuilder] = useState(null); // the server's builder state, plus receivedAt (local clock)
+    const builderRef = useRef(null); // mirrors builder, for reading inside socket handlers
+    const [clock, setClock] = useState(() => Date.now()); // re-renders animated storage numbers
     const [tasks, setTasks] = useState([]);
     const [recurringTasks, setRecurringTasks] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -66,14 +77,33 @@ export default function App() {
     const moneyToastTimer = useRef(null);
     const moneyToastRef = useRef(null); // mirrors the visible money toast, for merging inside socket handlers
 
-    // Only one of Profile/Agenda/Friends can be open at a time — they render in the same spot
-    const [activeHudPanel, setActiveHudPanel] = useState(null); // null | "profile" | "agenda" | "friends"
+    // Only one panel can be open at a time — they render in the same spot
+    const [activeHudPanel, setActiveHudPanel] = useState(null); // null | "profile" | "agenda" | "friends" | "inventory" | "workers"
     const [isMinimapOpen, setIsMinimapOpen] = useState(false);
+    const [minimapBottom, setMinimapBottom] = useState(0);
+    const mapToggleRef = useRef(null);
+    const hudStackRef = useRef(null);
+    const bottomBarRef = useRef(null);
 
     const [selectedBuildingId, setSelectedBuildingId] = useState(null);
-    const [selectedBuildingData, setSelectedBuildingData] = useState(null);
-    const [aiThought, setAiThought] = useState("Awaiting model data synchronization pass...");
-    const [rewardToast, setRewardToast] = useState(null);
+    const [aiThought, setAiThought] = useState(null);
+    const [levelUp, setLevelUp] = useState(null); // null | { level }
+    const [connection, setConnection] = useState("online"); // online | offline | lost
+
+    const [toasts, setToasts] = useState([]); // [{ id, kind, text, detail }]
+    const toastSeq = useRef(0);
+    const toastTimers = useRef(new Map()); // toast id -> its dismiss timer
+
+    const [placing, setPlacing] = useState(null); // null | { label, mode }
+    const placingRef = useRef(null);
+
+    const [summon, setSummonState] = useState(null); // null | { round, requested, result: null | summon_result payload }
+    const summonRef = useRef(null);
+    const summonTimer = useRef(null);
+    const summonRound = useRef(0);
+
+    const tutorialBaseline = useRef(null); // today's counts when "Replay guide" was pressed
+    const lastInventoryCount = useRef(null);
 
     const [friendsState, setFriendsState] = useState({ friends: [], incoming: [], outgoing: [] });
     const [friendSearchResults, setFriendSearchResults] = useState([]);
@@ -115,6 +145,64 @@ export default function App() {
         }
     };
 
+    const getScene = () => phaserRef.current?.scene?.scenes?.[0] ?? null;
+
+    // The same message again just stays up longer instead of stacking.
+    const toastsRef = useRef([]);
+    const pushToast = useCallback((toast) => {
+        const duplicate = toastsRef.current.find((t) => t.text === toast.text && t.detail === toast.detail);
+        const id = duplicate ? duplicate.id : ++toastSeq.current;
+        if (!duplicate) {
+            toastsRef.current = [...toastsRef.current.slice(-2), { id, ...toast }];
+            setToasts(toastsRef.current);
+        }
+        clearTimeout(toastTimers.current.get(id));
+        toastTimers.current.set(
+            id,
+            setTimeout(
+                () => {
+                    toastTimers.current.delete(id);
+                    toastsRef.current = toastsRef.current.filter((t) => t.id !== id);
+                    setToasts(toastsRef.current);
+                },
+                toast.kind === "error" ? 4500 : 3500,
+            ),
+        );
+    }, []);
+
+    const setSummon = useCallback((value) => {
+        summonRef.current = value;
+        setSummonState(value);
+        if (value?.result || !value) clearTimeout(summonTimer.current);
+    }, []);
+
+    // The scene's inspect callback; it may hand us the building or just its id.
+    const inspectBuilding = useCallback((buildingOrId) => {
+        const id = buildingOrId && typeof buildingOrId === "object" ? buildingOrId.id : buildingOrId;
+        setSelectedBuildingId(id);
+        if (isNarrowViewport()) {
+            setActiveHudPanel(null);
+            setIsMinimapOpen(false);
+        }
+    }, []);
+
+    // Called by the scene when a placement ends, and by us on cancel, so it may run twice.
+    // A cancel goes back to the inventory it came from; a success stays on the map.
+    const finishPlacement = useCallback(({ ok } = {}) => {
+        if (!placingRef.current) return;
+        placingRef.current = null;
+        setPlacing(null);
+        if (!ok) setActiveHudPanel("inventory");
+    }, []);
+
+    // Saved optimistically: the coach shouldn't wait on a round trip to move on.
+    const saveTutorial = useCallback((step, done) => {
+        const apply = (b) => (b ? { ...b, tutorial: { step, done } } : b);
+        builderRef.current = apply(builderRef.current);
+        setBuilder(apply);
+        emitAction("set_tutorial", { step, done });
+    }, []);
+
     useEffect(() => {
         if (!user) return;
 
@@ -124,17 +212,34 @@ export default function App() {
             phaserRef.current = initPhaser(
                 gameContainerRef.current,
                 socket,
-                (id) => {
-                    setSelectedBuildingId(id);
-                    socket.emit("inspect_building", id);
-                },
+                inspectBuilding,
                 () => {
                     setSelectedBuildingId(null);
-                    setSelectedBuildingData(null);
                     setIsModalOpen(true);
                 },
+                finishPlacement,
             );
         }
+
+        const applyBuilder = (next) => {
+            const prev = builderRef.current;
+            // Payloads can overtake each other on the wire; a stale one would undo newer state.
+            if (prev?.rev != null && next.rev != null && next.rev < prev.rev) return;
+            const stamped = { ...next, receivedAt: Date.now() };
+            builderRef.current = stamped;
+            setBuilder(stamped);
+            if (prev?.town && next.town && next.town.level > prev.town.level) setLevelUp({ level: next.town.level });
+        };
+
+        // refresh_data/refresh_money carry coins too, and aren't always followed by a builder_state.
+        const syncCoins = (nextStats) => {
+            const coins = nextStats?.coins;
+            if (typeof coins !== "number" || !builderRef.current || builderRef.current.coins === coins) return;
+            builderRef.current = { ...builderRef.current, coins };
+            setBuilder((b) => (b ? { ...b, coins } : b));
+        };
+
+        const namedLine = (line, level = 1) => lineBuildingName(line, level, builderRef.current?.rules);
 
         // Named handlers, removed by reference in cleanup. The socket is shared with the
         // Phaser scene, which registers its own init_state/building_*/state_update
@@ -146,6 +251,71 @@ export default function App() {
             if (state.recurringTasks) setRecurringTasks(state.recurringTasks);
             if (state.transactions) setTransactions(state.transactions);
             if (state.savingsGoals) setSavingsGoals(state.savingsGoals);
+            if (state.builder) applyBuilder(state.builder);
+        };
+
+        const onBuilderState = (state) => {
+            if (state) applyBuilder(state);
+        };
+
+        const onBuildingGenerated = ({ building, reason }) => {
+            // A catch-up release on first load arrives before any builder state, so before the names.
+            const rules = builderRef.current?.rules;
+            const name = rules && building ? buildingName(building, rules) : "building";
+            if (reason === "catch_up") {
+                pushToast({ kind: "info", icon: "inventory", text: rules ? `${name} arrived` : "A building arrived", detail: "One from your waiting list." });
+            } else if (reason === "money_log") {
+                pushToast({ kind: "info", icon: "inventory", text: `New ${name}`, detail: "Today's log built it. It's in your inventory." });
+            } else {
+                pushToast({ kind: "info", icon: "inventory", text: `New ${name}`, detail: "It's in your inventory, ready to place." });
+            }
+        };
+
+        const onBuildingPooled = ({ line, poolCount, poolMax }) => {
+            pushToast({ kind: "info", text: `${namedLine(line)} is waiting`, detail: `You've built plenty today. It comes on a later visit (${poolCount}/${poolMax}).` });
+        };
+
+        const onMergeDone = ({ building, cost }) => {
+            pushToast({ kind: "reward", text: `${buildingName(building, builderRef.current?.rules)}!`, detail: `Merged for ${cost} coins.` });
+            const seen = markTipSeen(builderRef.current?.tutorial, "merge");
+            if (seen) saveTutorial(seen.step, seen.done);
+        };
+
+        const onCoinsCollected = ({ total, bonus }) => {
+            if (total > 0) pushToast({ kind: "reward", icon: "collect", text: `+${total}`, detail: bonus > 0 ? `Includes ${bonus} from Early Bird.` : "Collected." });
+            else pushToast({ kind: "info", text: "Nothing to collect yet", detail: "Coins are still on their way." });
+            const tutorial = builderRef.current?.tutorial;
+            if (total > 0 && tutorial && !tutorial.done && finishFirstDay(tutorial.step) !== tutorial.step) saveTutorial(finishFirstDay(tutorial.step), false);
+        };
+
+        const onZoneExpanded = () => {
+            pushToast({ kind: "reward", icon: "expand", text: "New land!", detail: "Your town has room to grow." });
+        };
+
+        const onAutoPlaceDone = ({ placed, remaining }) => {
+            if (placed > 0) {
+                pushToast({ kind: "info", icon: "inventory", text: `Placed ${placed}`, detail: remaining > 0 ? `No room for ${remaining} more. Expanding makes space.` : "" });
+            } else if (remaining > 0) {
+                pushToast({ kind: "error", text: "No free spot", detail: "Move something, or expand your land." });
+            }
+        };
+
+        const onSummonResult = (data) => {
+            const seen = markTipSeen(builderRef.current?.tutorial, "summon");
+            if (seen) saveTutorial(seen.step, seen.done);
+            if (summonRef.current?.requested && !summonRef.current.result) {
+                setSummon({ ...summonRef.current, result: data });
+            } else {
+                // Opened from another tab: no surprise overlay here, just the news.
+                pushToast({ kind: "reward", icon: "summon", text: `${data.worker?.name}`, detail: "joined your town." });
+            }
+        };
+
+        const onBuilderError = ({ code, message } = {}) => {
+            if (summonRef.current?.requested && !summonRef.current.result) setSummon(null);
+            // Going too fast isn't a mistake, so it doesn't get the red treatment.
+            const slowDown = code === "RATE_LIMITED";
+            pushToast({ kind: slowDown ? "info" : "error", text: slowDown ? "Easy there" : "Hmm", detail: builderErrorMessage(code, message) });
         };
 
         // Back-to-back rewards (e.g. log reward + milestone reward) merge into the visible
@@ -158,17 +328,14 @@ export default function App() {
                 const coins = (current.coins || 0) + (toast.coins || 0);
                 next = {
                     kind: "reward",
+                    icon: "coin",
                     coins,
-                    text: `🪙 +${coins}`,
+                    text: `+${coins}`,
                     detail: [current.detail, toast.detail].filter(Boolean).join(" · "),
                 };
             }
             moneyToastRef.current = next;
             setMoneyToast(next);
-            if (toast.sticky) {
-                moneyToastTimer.current = null; // stays until replaced (e.g. "Connection lost")
-                return;
-            }
             const timer = setTimeout(() => {
                 if (moneyToastTimer.current !== timer) return; // superseded by a newer toast
                 moneyToastTimer.current = null;
@@ -179,22 +346,26 @@ export default function App() {
         };
 
         const onRefreshMoney = (data) => {
-            if (data.stats) setStats(data.stats);
+            if (data.stats) {
+                setStats(data.stats);
+                syncCoins(data.stats);
+            }
             if (data.transactions) setTransactions(data.transactions);
             if (data.savingsGoals) setSavingsGoals(data.savingsGoals);
         };
 
         const onMoneyReward = (data) => {
             const coins = Number(data.coins) || 0;
-            showMoneyToast({ kind: "reward", coins, text: `🪙 +${coins}`, detail: data.reason });
+            showMoneyToast({ kind: "reward", icon: "coin", coins, text: `+${coins}`, detail: data.reason });
         };
 
         const onMoneyError = (message) => {
-            showMoneyToast({ kind: "error", text: "⚠️", detail: String(message) });
+            showMoneyToast({ kind: "error", text: "Hmm", detail: String(message) });
         };
 
         const onRefreshData = (data) => {
             setStats(data.stats);
+            syncCoins(data.stats);
             setTasks(data.tasks);
         };
 
@@ -202,17 +373,17 @@ export default function App() {
             setRecurringTasks(data.recurringTasks);
         };
 
-        const onInspectionDetails = (content) => {
-            setSelectedBuildingData(content);
-        };
-
         const onAiThought = (data) => {
             setAiThought(data.thought);
         };
 
-        const onTaskReward = (data) => {
-            setRewardToast(data);
-            setTimeout(() => setRewardToast(null), 3500);
+        // The building itself gets its own toast from building_generated / building_pooled.
+        const onTaskReward = ({ coins, paidToday, pool_full: poolFull }) => {
+            const cap = builderRef.current?.today_counts?.tasksPaidCap;
+            const paid = cap ? `${paidToday}/${cap} paid today` : "";
+            if (coins > 0) pushToast({ kind: "reward", icon: "coin", text: `+${coins}`, detail: paid });
+            else pushToast({ kind: "info", text: "Task done", detail: cap ? `Today's ${cap} coin rewards are all paid.` : "" });
+            if (poolFull) pushToast({ kind: "info", text: "Waiting list is full", detail: "No new building this time." });
         };
 
         const onFriendsState = (data) => {
@@ -226,15 +397,9 @@ export default function App() {
         const onVisitState = (data) => {
             setVisitingFriend(data);
             setSelectedBuildingId(null);
-            setSelectedBuildingData(null);
-            const scene = phaserRef.current?.scene.scenes[0];
-            if (scene) {
-                scene.enterVisitMode(data.buildings, (id) => {
-                    setSelectedBuildingId(id);
-                    const building = data.buildings.find((b) => b.id === id);
-                    setSelectedBuildingData(visitBuildingCardHtml(building));
-                });
-            }
+            if (isNarrowViewport()) setActiveHudPanel(null); // the panel would hide the meadow being visited
+            const scene = getScene();
+            if (scene) scene.enterVisitMode(data.buildings, inspectBuilding);
         };
 
         const onVisitFailed = (message) => {
@@ -248,15 +413,32 @@ export default function App() {
 
         const onConnect = () => {
             serverKickRetries = 0;
+            clearTimeout(firstConnectTimer);
+            setConnection("online");
             socket.emit("request_friends_state");
         };
+
+        // Anything the Phaser scene emitted while offline is stale by the time we're back.
+        const dropBufferedEmits = () => {
+            socket.sendBuffer = [];
+        };
+
+        // A slow first connection only counts as a problem after a moment.
+        const firstConnectTimer = setTimeout(() => {
+            if (!socket.connected) setConnection("offline");
+        }, FIRST_CONNECT_GRACE_MS);
 
         // socket.io-client auto-reconnects after transport drops, but NOT after the server
         // calls socket.disconnect() (reason "io server disconnect") — which is what happens
         // to a socket without a valid session. Re-check the session: 401 -> reload into the
         // login page; anything else (still logged in, 5xx, network error) -> retry with backoff.
         const onDisconnect = (reason) => {
-            if (reason !== "io server disconnect") return;
+            if (reason !== "io server disconnect") {
+                setConnection("offline");
+                return;
+            }
+            // No "Reconnecting…" yet: this may be a logout in another tab, which goes straight
+            // to the login page. emitAction already refuses anything in the meantime.
             fetch("/auth/me", { credentials: "include" })
                 .then((res) => res.status === 401)
                 .catch(() => false) // network error: session state unknown, keep retrying
@@ -266,26 +448,37 @@ export default function App() {
                         window.location.reload();
                         return;
                     }
+                    setConnection("offline");
                     if (serverKickRetries >= 3) {
                         console.error("❌ [Socket]: server keeps closing the connection; not retrying.");
-                        showMoneyToast({ kind: "error", text: "⚠️", detail: "Connection lost — please refresh", sticky: true });
+                        setConnection("lost");
                         return;
                     }
                     serverKickRetries += 1;
                     setTimeout(() => {
-                        if (!cancelled) socket.connect();
+                        if (cancelled) return;
+                        dropBufferedEmits();
+                        socket.connect();
                     }, 1000 * serverKickRetries);
                 });
         };
 
         const handlers = {
             init_state: onInitState,
+            builder_state: onBuilderState,
+            building_generated: onBuildingGenerated,
+            building_pooled: onBuildingPooled,
+            merge_done: onMergeDone,
+            coins_collected: onCoinsCollected,
+            zone_expanded: onZoneExpanded,
+            auto_place_done: onAutoPlaceDone,
+            summon_result: onSummonResult,
+            builder_error: onBuilderError,
             refresh_money: onRefreshMoney,
             money_reward: onMoneyReward,
             money_error: onMoneyError,
             refresh_data: onRefreshData,
             refresh_recurring_tasks: onRefreshRecurringTasks,
-            inspection_details: onInspectionDetails,
             ai_thought_broadcast: onAiThought,
             task_reward: onTaskReward,
             friends_state: onFriendsState,
@@ -296,26 +489,93 @@ export default function App() {
             disconnect: onDisconnect,
         };
         Object.entries(handlers).forEach(([event, handler]) => socket.on(event, handler));
+        socket.io.on("reconnect_attempt", dropBufferedEmits);
 
         // Already connected (effect re-run under HMR): "connect" won't fire again.
         if (socket.connected) onConnect();
 
+        // Daily counters and sleep state only change on the server; catch up when the tab returns.
+        const onVisibilityChange = () => {
+            if (document.visibilityState !== "visible") return;
+            setClock(Date.now());
+            if (socket.connected) socket.emit("request_builder_state");
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange);
+
+        const storageTick = setInterval(() => setClock(Date.now()), STORAGE_TICK_MS);
+        const pendingToastTimers = toastTimers.current;
+
         return () => {
             cancelled = true;
             Object.entries(handlers).forEach(([event, handler]) => socket.off(event, handler));
+            socket.io.off("reconnect_attempt", dropBufferedEmits);
+            clearTimeout(firstConnectTimer);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+            clearInterval(storageTick);
+            pendingToastTimers.forEach(clearTimeout);
+            pendingToastTimers.clear();
+            clearTimeout(summonTimer.current);
             clearTimeout(moneyToastTimer.current);
             moneyToastTimer.current = null;
             moneyToastRef.current = null;
         };
-    }, [user]);
+    }, [user, pushToast, setSummon, inspectBuilding, finishPlacement, saveTutorial]);
 
-    // Freeze input controls when an overlay (task modal, money quick-add, or dashboard) is open
+    // Push the server's town into the scene. State can arrive before the scene is running
+    // (it's still preloading), so keep retrying until it can take it. While touring a
+    // friend's meadow the scene shows their buildings; leaving re-requests init_state.
+    const placedBuildings = builder?.placed;
+    const zone = builder?.zone;
+    const sleepy = builder?.sleepy;
+    const isVisiting = !!visitingFriend;
+    useEffect(() => {
+        if (!placedBuildings || isVisiting) return undefined;
+        let retry = null;
+        const syncScene = () => {
+            const scene = getScene();
+            if (!scene?.sys?.isActive?.() || typeof scene.syncBuildings !== "function") {
+                retry = setTimeout(syncScene, 150);
+                return;
+            }
+            try {
+                scene.syncBuildings(placedBuildings);
+                scene.setZone(zone);
+                scene.setSleepy(!!sleepy);
+            } catch (err) {
+                console.error("❌ [Scene Sync Failed]:", err);
+            }
+        };
+        syncScene();
+        return () => clearTimeout(retry);
+    }, [placedBuildings, zone, sleepy, isVisiting]);
+
+    // Guided first day: move the coach along as real state changes.
+    const pendingTaskCount = tasks.filter((t) => t.status === "pending").length;
+    useEffect(() => {
+        const inventoryCount = builder?.inventory?.length;
+        const previousCount = lastInventoryCount.current;
+        lastInventoryCount.current = inventoryCount ?? null;
+
+        const tutorial = builder?.tutorial;
+        if (!tutorial || tutorial.done) return;
+        const next = advanceFirstDay(tutorial.step, {
+            builder,
+            pendingTaskCount,
+            baseline: tutorialBaseline.current,
+            inventoryShrank: previousCount != null && inventoryCount < previousCount,
+        });
+        if (next > Math.max(tutorial.step, 1)) saveTutorial(next, false);
+    }, [builder, pendingTaskCount, saveTutorial]);
+
+    // Freeze input controls when an overlay or a panel with inputs is open (typing "w" in a
+    // search box must not walk the player, and global capture would swallow the letter)
+    const keyboardFrozen = isModalOpen || isDashboardOpen || isQuickAddOpen || activeHudPanel === "friends" || activeHudPanel === "workers" || !!summon || connection !== "online";
     useEffect(() => {
         if (!phaserRef.current) return;
         const scene = phaserRef.current.scene.scenes[0];
         if (!scene || !scene.input || !scene.input.keyboard) return;
 
-        if (isModalOpen || isDashboardOpen || isQuickAddOpen) {
+        if (keyboardFrozen) {
             scene.input.keyboard.disableGlobalCapture();
             scene.input.keyboard.enabled = false;
             scene.input.keyboard.resetKeys();
@@ -324,97 +584,247 @@ export default function App() {
             scene.input.keyboard.enabled = true;
             scene.input.keyboard.enableGlobalCapture();
         }
-    }, [isModalOpen, isDashboardOpen, isQuickAddOpen]);
+    }, [keyboardFrozen]);
 
-    // Toggle the Phaser-side minimap camera/frame open or closed
+    // Esc backs out of whatever is on top. The summon reveal and quick-log handle their own.
     useEffect(() => {
-        if (!phaserRef.current) return;
-        const scene = phaserRef.current.scene.scenes[0];
-        if (!scene || !scene.toggleMinimap) return;
-        scene.toggleMinimap(isMinimapOpen);
-    }, [isMinimapOpen]);
+        const onKeyDown = (e) => {
+            if (e.key !== "Escape" || summonRef.current || isQuickAddOpen || isDashboardOpen) return;
+            if (placingRef.current) {
+                getScene()?.cancelPlacement?.();
+                finishPlacement({ ok: false });
+            } else if (isModalOpen) {
+                setIsModalOpen(false);
+            } else if (activeHudPanel) {
+                setActiveHudPanel(null);
+            } else if (selectedBuildingId) {
+                setSelectedBuildingId(null);
+                getScene()?.clearActiveMenu?.();
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [isModalOpen, isQuickAddOpen, isDashboardOpen, activeHudPanel, selectedBuildingId, finishPlacement]);
+
+    // The Phaser-side map opens directly below the town sign and stops short of whatever is in the
+    // bottom bar on its side of the screen. Both change height with builder state and the screen, so
+    // this measures after every render. It also catches the map being opened before create() ran.
+    useEffect(() => {
+        const place = () => {
+            const scene = getScene();
+            if (!scene?.toggleMinimap) return;
+            if (scene.minimapVisible !== isMinimapOpen) scene.toggleMinimap(isMinimapOpen);
+            if (!isMinimapOpen || !hudStackRef.current || !mapToggleRef.current) return;
+            const top = Math.max(hudStackRef.current.getBoundingClientRect().bottom, mapToggleRef.current.getBoundingClientRect().bottom) + MINIMAP_GAP_PX;
+            const right = window.innerWidth - RAIL_CLEARANCE_PX;
+            const inBottomBar = [...(bottomBarRef.current?.children || [])].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0 && r.left < right && r.right > MINIMAP_CONFIG.FRAME_LEFT);
+            const bottom = Math.min(window.innerHeight, ...inBottomBar.map((r) => r.top)) - MINIMAP_GAP_PX;
+            setMinimapBottom(Math.ceil(scene.placeMinimap({ top, right, bottom })));
+        };
+        place();
+        window.addEventListener("resize", place);
+        return () => window.removeEventListener("resize", place);
+    });
 
     const handleAddTask = ({ title, category, date, estimatedMinutes }) => {
-        socket.emit("add_task", { title, category, due_date: date, estimated_minutes: estimatedMinutes });
+        emitAction("add_task", { title, category, due_date: date, estimated_minutes: estimatedMinutes });
     };
 
     const handleEditTask = ({ id, title, category, date, estimatedMinutes }) => {
-        socket.emit("edit_task", { id, title, category, due_date: date, estimated_minutes: estimatedMinutes });
+        emitAction("edit_task", { id, title, category, due_date: date, estimated_minutes: estimatedMinutes });
     };
 
     const handleDeleteTask = (id) => {
-        socket.emit("delete_task", id);
+        emitAction("delete_task", id);
     };
 
     const handleCompleteTask = (id) => {
-        socket.emit("complete_task", id);
+        emitAction("complete_task", id);
     };
 
     const handleAddRecurringTask = ({ title, category, estimatedMinutes, startTime, endTime }) => {
-        socket.emit("add_recurring_task", { title, category, estimated_minutes: estimatedMinutes, days_of_week: ALL_DAYS, start_time: startTime, end_time: endTime });
+        emitAction("add_recurring_task", { title, category, estimated_minutes: estimatedMinutes, days_of_week: ALL_DAYS, start_time: startTime, end_time: endTime });
     };
 
     const handleEditRecurringTask = ({ id, title, category, estimatedMinutes, startTime, endTime }) => {
-        socket.emit("edit_recurring_task", { id, title, category, estimated_minutes: estimatedMinutes, days_of_week: ALL_DAYS, start_time: startTime, end_time: endTime });
+        emitAction("edit_recurring_task", { id, title, category, estimated_minutes: estimatedMinutes, days_of_week: ALL_DAYS, start_time: startTime, end_time: endTime });
     };
 
     const handleDeleteRecurringTask = (id) => {
-        socket.emit("delete_recurring_task", id);
+        emitAction("delete_recurring_task", id);
     };
 
     const handleToggleRecurringTask = ({ id, active }) => {
-        socket.emit("toggle_recurring_task", { id, active });
+        emitAction("toggle_recurring_task", { id, active });
     };
 
     const handleAddTransaction = ({ amountCents, direction, category, note, savingsGoalId }) => {
-        socket.emit("add_transaction", { amountCents, direction, category, note, savingsGoalId });
+        emitAction("add_transaction", { amountCents, direction, category, note, savingsGoalId });
     };
 
     const handleDeleteTransaction = (id) => {
-        socket.emit("delete_transaction", id);
+        emitAction("delete_transaction", id);
     };
 
     const handleAddSavingsGoal = ({ title, targetCents, deadline }) => {
-        socket.emit("add_savings_goal", { title, targetCents, deadline });
+        emitAction("add_savings_goal", { title, targetCents, deadline });
     };
 
     const handleDeleteSavingsGoal = (id) => {
-        socket.emit("delete_savings_goal", id);
+        emitAction("delete_savings_goal", id);
     };
 
     const handleSearchFriends = (query) => {
-        if (query.trim().length >= 2) socket.emit("search_users", { query });
+        if (query.trim().length >= 2) emitAction("search_users", { query });
         else setFriendSearchResults([]);
     };
 
     const handleSendFriendRequest = (addresseeId) => {
-        socket.emit("send_friend_request", { addresseeId });
+        emitAction("send_friend_request", { addresseeId });
     };
 
     const handleRespondFriendRequest = (requestId, accept) => {
-        socket.emit("respond_friend_request", { requestId, accept });
+        emitAction("respond_friend_request", { requestId, accept });
     };
 
     const handleRemoveFriend = (friendshipId) => {
-        socket.emit("remove_friend", { friendshipId });
+        emitAction("remove_friend", { friendshipId });
     };
 
     const handleVisitFriend = (friendId) => {
-        socket.emit("visit_friend_map", { friendId });
+        emitAction("visit_friend_map", { friendId });
     };
 
     const handleLeaveVisit = () => {
         setVisitingFriend(null);
         setSelectedBuildingId(null);
-        setSelectedBuildingData(null);
-        const scene = phaserRef.current?.scene.scenes[0];
+        const scene = getScene();
         if (scene) scene.exitVisitMode();
     };
 
-    const pendingCount = tasks.filter((t) => t.status === "pending").length;
+    const togglePanel = (panel) => {
+        if (isNarrowViewport()) {
+            setSelectedBuildingId(null);
+            setIsMinimapOpen(false);
+        }
+        setActiveHudPanel((current) => (current === panel ? null : panel));
+    };
+
+    const handleToggleMinimap = () => {
+        if (!isMinimapOpen && isNarrowViewport()) {
+            setActiveHudPanel(null);
+            setSelectedBuildingId(null);
+            getScene()?.clearActiveMenu?.();
+        }
+        setIsMinimapOpen(!isMinimapOpen);
+    };
+
+    const closeBuildingCard = () => {
+        setSelectedBuildingId(null);
+        getScene()?.clearActiveMenu?.();
+    };
+
+    const startPlacement = (request, label) => {
+        const scene = getScene();
+        if (typeof scene?.beginPlacement !== "function" || !scene.sys?.isActive?.()) {
+            pushToast({ kind: "error", text: "Hang on", detail: "The map is still loading." });
+            return;
+        }
+        if (scene.beginPlacement(request) === false) return;
+        setActiveHudPanel(null);
+        setSelectedBuildingId(null);
+        const next = { label, mode: request.mode };
+        placingRef.current = next;
+        setPlacing(next);
+    };
+
+    const handlePlaceFromInventory = (building) => {
+        startPlacement({ buildingId: building.id, footprint: building.footprint, mode: "place", assetKey: building.asset_key }, buildingName(building, builder?.rules));
+    };
+
+    const handleBuyDecoration = (assetKey) => {
+        startPlacement({ buildingId: null, footprint: builder?.rules?.FOOTPRINT?.decoration, mode: "purchase", assetKey }, decorationName(assetKey));
+    };
+
+    const handleCancelPlacement = () => {
+        getScene()?.cancelPlacement?.();
+        finishPlacement({ ok: false });
+    };
+
+    const handleCollect = (buildingId) => emitAction("collect", { buildingId });
+    const handleCollectAll = () => emitAction("collect_all", {});
+    const handleAutoPlace = () => emitAction("auto_place", {});
+    const handleExpand = () => emitAction("expand_zone", {});
+    const handleSetStaffMode = (buildingId, mode) => emitAction("set_staff_mode", { buildingId, mode });
+    const handleAssignWorker = (workerId, buildingId) => emitAction("assign_worker", { workerId, buildingId });
+
+    // Shows the closed box. Nothing goes to the server until it's tapped open.
+    const handleOpenSummon = () => {
+        summonRound.current += 1;
+        setSummon({ round: summonRound.current, requested: false, result: null });
+    };
+
+    const handleRequestSummon = () => {
+        if (!emitAction("open_summon", {})) return false;
+        setSummon({ ...summonRef.current, requested: true });
+        clearTimeout(summonTimer.current);
+        summonTimer.current = setTimeout(() => {
+            if (summonRef.current?.requested && !summonRef.current.result) {
+                setSummon(null);
+                pushToast({ kind: "error", text: "Hmm", detail: "The summon didn't come through. Your gift is safe, so try again." });
+            }
+        }, SUMMON_TIMEOUT_MS);
+        return true;
+    };
+
+    const handleCloseSummon = useCallback(() => setSummon(null), [setSummon]);
+    const handleLevelUpDone = useCallback(() => setLevelUp(null), []);
+
+    const handleSkipGuide = () => {
+        tutorialBaseline.current = null;
+        saveTutorial(builder?.tutorial?.step ?? 0, true);
+    };
+
+    const handleReplayGuide = () => {
+        const counts = builder?.today_counts;
+        tutorialBaseline.current = { tasksPaid: counts?.tasksPaid ?? 0, logsPaid: counts?.logsPaid ?? 0 };
+        setActiveHudPanel(null);
+        saveTutorial(0, false);
+    };
+
+    const handleCoachAction = (key) => {
+        const tutorial = builder?.tutorial;
+        if (key === "add_task") setIsModalOpen(true);
+        else if (key === "open_agenda") setActiveHudPanel("agenda");
+        else if (key === "open_inventory") setActiveHudPanel("inventory");
+        else if (key === "open_log") setIsQuickAddOpen(true);
+        else if (key === "open_summon") handleOpenSummon();
+        else if (key === "finish_first_day") {
+            tutorialBaseline.current = null;
+            saveTutorial(finishFirstDay(tutorial.step), false);
+        } else if (key === "tip_merge" || key === "tip_summon") {
+            const seen = markTipSeen(tutorial, key === "tip_merge" ? "merge" : "summon");
+            if (seen) saveTutorial(seen.step, seen.done);
+        }
+    };
+
+    const pendingCount = pendingTaskCount;
+    const selectedBuilding = selectedBuildingId == null ? null : (visitingFriend ? visitingFriend.buildings : builder?.placed || []).find((b) => b.id === selectedBuildingId) || null;
+    const storageClock = Math.max(clock, builder?.receivedAt || 0);
+    const collectTotal = collectableCoins(builder, storageClock);
+    const rewardPreview = taskRewardPreview(builder);
+    const rules = builder?.rules;
+    const coach = coachMessage(builder, storageClock);
+    const reveal = hudReveal(builder, friendsState);
+    const showBottomBar = !isDashboardOpen && !visitingFriend && !placing;
+    const panelCoversMap = !!activeHudPanel || !!selectedBuilding; // below lg, nothing else fits beside one
+
+    const toastList = moneyToast ? [{ id: "money", ...moneyToast }, ...toasts] : toasts;
+    const toastTop = isMinimapOpen && minimapBottom ? minimapBottom + MINIMAP_GAP_PX : HUD_TOP_PX + (visitingFriend ? 68 : 60) + (builder?.sleepy && !visitingFriend ? 52 : 0);
+    const toastPlacement = isDashboardOpen ? "dashboard" : activeHudPanel ? "panel" : "map";
 
     if (user === undefined) {
-        return <div className="w-screen h-screen bg-[#1e1e24] flex items-center justify-center text-slate-400 text-sm">Loading...</div>;
+        return <div className="font-pixel w-screen h-screen bg-[#3f7a3a] flex items-center justify-center text-[#f6e6c8] text-xl">Loading...</div>;
     }
 
     if (!user) {
@@ -422,41 +832,91 @@ export default function App() {
     }
 
     return (
-        <div className="w-screen h-screen bg-[#1e1e24] overflow-hidden select-none font-sans">
+        <div className="w-screen h-screen bg-[#3f7a3a] overflow-hidden select-none font-sans">
             <div id="master-container" className="relative w-full h-full">
                 {/* Core Fullscreen Game Screen Canvas Block Container */}
                 <div ref={gameContainerRef} id="game-container" className="absolute inset-0 w-full h-full z-10" />
 
-                {/* Structure Specification Overview Card Panel */}
-                {selectedBuildingId && selectedBuildingData && <BuildingCard data={selectedBuildingData} />}
+                {/* What's on the tile you tapped: live from builder state, or a friend's row while visiting */}
+                {selectedBuilding && !placing && (
+                    <BuildingCard
+                        building={selectedBuilding}
+                        builder={builder}
+                        clock={storageClock}
+                        readOnly={!!visitingFriend}
+                        hostName={visitingFriend?.host?.name}
+                        goal={visitingFriend ? null : savingsGoals.find((g) => g.building_id === selectedBuilding.id)}
+                        sourceTask={visitingFriend ? null : tasks.find((t) => t.building_id === selectedBuilding.id)}
+                        onClose={closeBuildingCard}
+                        onCollect={handleCollect}
+                        onSetStaffMode={handleSetStaffMode}
+                    />
+                )}
 
-                {/* Minimap Toggle — sits left of the minimap panel (which is offset via
-                    MINIMAP_CONFIG.MARGIN_LEFT to leave exactly this much room), so the icon
-                    always reads first and the panel opens after it, never underneath it */}
+                {/* Minimap Toggle — left of the town sign; the panel opens below the sign and
+                    lines up with it (MINIMAP_CONFIG.FRAME_LEFT), so nothing moves when it opens */}
                 <button
-                    onClick={() => setIsMinimapOpen((open) => !open)}
+                    ref={mapToggleRef}
+                    onClick={handleToggleMinimap}
                     title="Toggle map"
                     style={{ top: `${MINIMAP_CONFIG.MARGIN_TOP}px` }}
-                    className={`fixed left-4 z-30 w-11 h-11 rounded-full flex items-center justify-center text-lg shadow-lg border transition ${
-                        isMinimapOpen ? "bg-indigo-600 border-indigo-400 text-white" : "bg-[#23232e]/90 border-slate-700 text-slate-200 hover:border-indigo-400"
-                    }`}
+                    aria-label="Toggle map"
+                    aria-pressed={isMinimapOpen}
+                    className={btn(isMinimapOpen ? "pressed" : "muted", "fixed left-4 z-30 !p-0 w-11 h-11")}
                 >
-                    🗺️
+                    <Icon name="map" />
                 </button>
 
-                {/* Profile / Agenda / Friends Icon Rail + Popover Panels (mutually exclusive — same screen slot) */}
-                <HudIconRail
-                    isProfileOpen={activeHudPanel === "profile"}
-                    isAgendaOpen={activeHudPanel === "agenda"}
-                    isFriendsOpen={activeHudPanel === "friends"}
-                    onToggleProfile={() => setActiveHudPanel((p) => (p === "profile" ? null : "profile"))}
-                    onToggleAgenda={() => setActiveHudPanel((p) => (p === "agenda" ? null : "agenda"))}
-                    onToggleFriends={() => setActiveHudPanel((p) => (p === "friends" ? null : "friends"))}
-                    pendingCount={pendingCount}
-                    friendRequestCount={friendsState.incoming.length}
-                />
-                {activeHudPanel === "profile" && <ProfilePanel stats={stats} aiThought={aiThought} user={user} onLogout={handleLogout} />}
+                {/* Top-left stack beside the map toggle: town stats, or the banner while visiting.
+                    Clicks pass through the empty parts of the stack to the game underneath. */}
+                <div ref={hudStackRef} className="fixed z-30 left-4 right-[68px] lg:right-auto flex flex-col items-start gap-1.5 pointer-events-none" style={{ top: HUD_TOP_PX }}>
+                    {visitingFriend ? (
+                        <div
+                            className={`pointer-events-auto px-2.5 py-1.5 flex items-center gap-3 lg:fixed lg:top-6 lg:left-1/2 lg:-translate-x-1/2 ml-[52px] lg:ml-0 ${PANEL_CLASS}`}
+                        >
+                            <span className="text-xs">
+                                Visiting <strong className="font-pixel text-sm">{visitingFriend.host.name || "a friend"}'s</strong> meadow
+                            </span>
+                            <button onClick={handleLeaveVisit} className={btn("next", "shrink-0")}>
+                                Leave
+                            </button>
+                        </div>
+                    ) : (
+                        builder && <BuilderHud builder={builder} reveal={reveal} onOpenProfile={() => togglePanel("profile")} leaveRoomForMapToggle />
+                    )}
+                </div>
+
+                {/* Panels rail + popovers (mutually exclusive — same screen slot). While placing,
+                    the map and the placement bar are the only things that matter. */}
+                {!placing && (
+                    <HudIconRail
+                        activePanel={activeHudPanel}
+                        onTogglePanel={togglePanel}
+                        pendingCount={pendingCount}
+                        friendRequestCount={friendsState.incoming.length}
+                        inventoryCount={builder?.inventory?.length || 0}
+                        summonCount={builder?.workers?.pendingSummons || 0}
+                        showBuilder={!!builder && !visitingFriend}
+                        showWorkers={reveal.workers}
+                        showFriends={reveal.friends}
+                        onSummon={handleOpenSummon}
+                    />
+                )}
+                {activeHudPanel === "profile" && <ProfilePanel stats={stats} builder={builder} aiThought={aiThought} user={user} onLogout={handleLogout} onReplayGuide={handleReplayGuide} />}
                 {activeHudPanel === "agenda" && <AgendaPanel tasks={tasks} onCompleteTask={handleCompleteTask} />}
+                {activeHudPanel === "inventory" && builder && (
+                    <InventoryPanel
+                        builder={builder}
+                        onPlace={handlePlaceFromInventory}
+                        onAutoPlace={handleAutoPlace}
+                        onBuyDecoration={handleBuyDecoration}
+                        onOpenGoals={() => {
+                            setActiveHudPanel(null);
+                            setIsDashboardOpen(true);
+                        }}
+                    />
+                )}
+                {activeHudPanel === "workers" && builder && <WorkersPanel builder={builder} onSummon={handleOpenSummon} onAssign={handleAssignWorker} />}
                 {activeHudPanel === "friends" && (
                     <FriendsPanel
                         friendsState={friendsState}
@@ -469,63 +929,57 @@ export default function App() {
                     />
                 )}
 
-                {/* Visiting banner — read-only tour of a friend's meadow */}
-                {visitingFriend && (
-                    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-40 bg-[#23232e]/95 border border-indigo-500/50 rounded-xl px-4 py-2 shadow-2xl flex items-center gap-3">
-                        <span className="text-xs text-slate-200">
-                            🚪 Visiting <strong>{visitingFriend.host.name || "a friend"}'s</strong> meadow (read-only)
-                        </span>
-                        <button onClick={handleLeaveVisit} className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1 px-2.5 rounded text-[11px] transition">
-                            Leave
-                        </button>
+                {/* Every toast: rewards, builder news, errors */}
+                <ToastStack toasts={toastList} topPx={toastTop} placement={toastPlacement} />
+
+                {/* Bottom bar: coach, builder actions, then Goals + Log. Hidden on a friend's
+                    meadow, and while placing, when it gives way to the placement bar. */}
+                {showBottomBar && (
+                    <div ref={bottomBarRef} className="fixed bottom-6 left-4 right-4 z-20 flex flex-col items-center gap-2 pointer-events-none [&>*]:pointer-events-auto">
+                        {coach && <CoachBubble message={coach} onAction={handleCoachAction} onSkip={handleSkipGuide} hideBelowLg={panelCoversMap} />}
+                        {builder && (
+                            <BuilderActions
+                                builder={builder}
+                                collectTotal={collectTotal}
+                                coachTarget={coach?.target}
+                                showExpand={reveal.expand}
+                                hideBelowLg={panelCoversMap}
+                                onOpenInventory={() => togglePanel("inventory")}
+                                onCollectAll={handleCollectAll}
+                                onExpand={handleExpand}
+                                onExpandBlocked={(why) => pushToast({ kind: "info", icon: "expand", text: "Not yet", detail: why })}
+                            />
+                        )}
+                        <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => setIsDashboardOpen(true)} data-coach-target="goals" className={btn(coach?.target === "goals" ? "next" : "muted", `!text-sm px-4 ${coach?.target === "goals" ? "hud-nudge" : ""}`)}>
+                                <Icon name="goals" /> Tasks
+                            </button>
+                            <button onClick={() => setIsQuickAddOpen(true)} data-coach-target="log" className={btn(coach?.target === "log" ? "next" : "muted", `!text-sm px-4 ${coach?.target === "log" ? "hud-nudge" : ""}`)}>
+                                <Icon name="log" /> Log
+                            </button>
+                        </div>
                     </div>
                 )}
 
-                {/* Reward Toast */}
-                {rewardToast && (
-                    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-[#23232e]/95 border border-emerald-500/50 rounded-xl px-4 py-2.5 shadow-2xl flex items-center gap-2">
-                        <span className="text-yellow-400 font-bold text-sm">🪙 +{rewardToast.totalCoins}</span>
-                        <span className="text-xs text-slate-300">
-                            {rewardToast.isOnTime ? `(${rewardToast.baseCoins} base + ${rewardToast.bonusCoins} on-time bonus)` : `(${rewardToast.baseCoins} base, overdue)`}
-                        </span>
-                    </div>
-                )}
-
-                {/* Money toast (log reward / milestone / error) */}
-                {moneyToast && (
-                    <div
-                        className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#23232e]/95 border rounded-xl px-4 py-2.5 shadow-2xl flex items-center gap-2 ${
-                            moneyToast.kind === "error" ? "border-rose-500/60" : "border-emerald-500/50"
-                        }`}
-                    >
-                        <span className={`font-bold text-sm ${moneyToast.kind === "error" ? "text-rose-400" : "text-yellow-400"}`}>{moneyToast.text}</span>
-                        {moneyToast.detail && <span className="text-xs text-slate-300">{moneyToast.detail}</span>}
-                    </div>
-                )}
-
-                {/* Goals + Money quick-log — hidden while touring a friend's meadow */}
-                {!isDashboardOpen && !visitingFriend && (
-                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
-                        <button
-                            onClick={() => setIsDashboardOpen(true)}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-5 rounded-full text-xs shadow-2xl transition flex items-center gap-1.5"
-                        >
-                            📋 Goals
-                        </button>
-                        <button
-                            onClick={() => setIsQuickAddOpen(true)}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-full text-xs shadow-2xl transition flex items-center gap-1.5"
-                        >
-                            💸 Log
-                        </button>
+                {/* Placement bar: what you're placing, and the way out */}
+                {placing && (
+                    <div className="fixed bottom-6 left-4 right-4 z-20 flex justify-center pointer-events-none">
+                        <div className={`pointer-events-auto pl-3 pr-1.5 py-1.5 flex items-center gap-3 max-w-full ${PANEL_CLASS}`}>
+                            <span className="text-xs min-w-0">
+                                Tap a free spot for <strong className="font-pixel text-sm">{placing.label}</strong>
+                            </span>
+                            <button onClick={handleCancelPlacement} className={btn("muted", "shrink-0")}>
+                                Cancel<span className="hidden lg:inline"> (Esc)</span>
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
 
             {/* Creation Prompt Modal Panel Form */}
-            <TaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onCreateTask={handleAddTask} />
+            <TaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onCreateTask={handleAddTask} rewardPreview={rewardPreview} rules={rules} />
 
-            {/* Goal Dashboard Page */}
+            {/* Tasks, calendar, habits and money */}
             <TaskDashboard
                 isOpen={isDashboardOpen}
                 onClose={() => setIsDashboardOpen(false)}
@@ -545,10 +999,19 @@ export default function App() {
                 onDeleteSavingsGoal={handleDeleteSavingsGoal}
                 onDeleteTransaction={handleDeleteTransaction}
                 onOpenQuickAdd={() => setIsQuickAddOpen(true)}
+                rewardPreview={rewardPreview}
+                rules={rules}
             />
 
             {/* Money quick-log (rendered above the dashboard so it also works from the Money page) */}
             <QuickAddMoney isOpen={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} onSubmit={handleAddTransaction} savingsGoals={savingsGoals} />
+
+            {/* Mystery summon reveal */}
+            {summon && <SummonReveal key={summon.round} result={summon.result} onRequest={handleRequestSummon} onClose={handleCloseSummon} onOpenAnother={handleOpenSummon} />}
+
+            {levelUp && <LevelUpBanner key={levelUp.level} level={levelUp.level} onDone={handleLevelUpDone} />}
+
+            {connection !== "online" && <ConnectionBanner lost={connection === "lost"} />}
         </div>
     );
 }

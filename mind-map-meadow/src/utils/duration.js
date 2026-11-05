@@ -40,6 +40,22 @@ export function minutesFromTimeRange(startTime, endTime) {
     return endMinutes - startMinutes;
 }
 
+// "HH:MM" strings compare correctly as text.
+export function isOvernight(startTime, endTime) {
+    return String(endTime || "").slice(0, 5) <= String(startTime || "").slice(0, 5);
+}
+
+// Reads the way a person says it: "45 min", "2 hours", "1 hour 30 min", "1 day".
+export function formatMinutes(minutes) {
+    const total = Math.max(0, Math.round(Number(minutes) || 0));
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    if (total >= 24 * 60 && total % (24 * 60) === 0) return plural(total / (24 * 60), "day");
+    const hours = Math.floor(total / 60);
+    const mins = total % 60;
+    if (hours === 0) return `${mins} min`;
+    return mins === 0 ? plural(hours, "hour") : `${plural(hours, "hour")} ${mins} min`;
+}
+
 export function formatTimeRange(startTime, endTime) {
     const format = (time) => {
         const [h, m] = (time || "00:00").split(":").map(Number);
@@ -47,5 +63,5 @@ export function formatTimeRange(startTime, endTime) {
         const displayHour = h % 12 === 0 ? 12 : h % 12;
         return `${displayHour}:${String(m).padStart(2, "0")} ${period}`;
     };
-    return `${format(startTime)} - ${format(endTime)}`;
+    return `${format(startTime)} - ${format(endTime)}${isOvernight(startTime, endTime) ? " (overnight)" : ""}`;
 }

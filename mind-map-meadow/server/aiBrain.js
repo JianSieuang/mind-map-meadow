@@ -1,4 +1,5 @@
 import { pool } from "./db.js";
+import { townLevel } from "./rewards.js";
 
 function setRandomWanderTarget(gameContext) {
     const targetX = Math.floor(Math.random() * 20 + 5) * 48 + 24;
@@ -22,9 +23,9 @@ export async function triggerLlamaBrainDecision(io, gameContext, userId) {
     try {
         const statsQuery = await pool.query("SELECT * FROM player_stats WHERE user_id = $1 LIMIT 1", [userId]);
         const tasksQuery = await pool.query("SELECT title, category, status FROM tasks WHERE user_id = $1 LIMIT 5", [userId]);
-        const buildingsQuery = await pool.query("SELECT id, x, y FROM buildings WHERE user_id = $1", [userId]);
+        const buildingsQuery = await pool.query("SELECT id, x, y FROM buildings WHERE user_id = $1 AND state = 'placed'", [userId]);
 
-        const stats = statsQuery.rows[0] || { level: 1, coins: 0 };
+        const stats = statsQuery.rows[0] || { town_xp: 0, coins: 0 };
         const buildingsList = buildingsQuery.rows.map((b) => `ID:${b.id} (X:${b.x},Y:${b.y})`).join(", ");
 
         console.log("🧠 [AI Brain] Sending structured payload to local Ollama container...");
@@ -35,7 +36,7 @@ export async function triggerLlamaBrainDecision(io, gameContext, userId) {
             signal: controller.signal,
             body: JSON.stringify({
                 model: "llama3.2:latest",
-                prompt: `You are an autonomous companion circle in a game. Stats: Level ${stats.level}, Coins: ${stats.coins}. Tasks: ${JSON.stringify(tasksQuery.rows)}. Map buildings: [${buildingsList}].
+                prompt: `You are an autonomous companion circle in a game. Stats: Town level ${townLevel(stats.town_xp)}, Coins: ${stats.coins}. Tasks: ${JSON.stringify(tasksQuery.rows)}. Map buildings: [${buildingsList}].
                 Pick an action: FOLLOW_PLAYER, WANDER, or INSPECT_BUILDING:id.
                 Respond ONLY in this exact plain text layout:
                 ACTION: <your chosen action> | THOUGHT: <1 sentence comment to the player>`,
@@ -52,7 +53,6 @@ export async function triggerLlamaBrainDecision(io, gameContext, userId) {
 
         const data = await response.json();
         const rawAiOutput = data.response;
-        console.log(`🧠 [AI Brain] Raw Output Received:\n"${rawAiOutput}"`);
 
         // Text parsing logic
         let parsedThought = "Awaiting your next objective...";

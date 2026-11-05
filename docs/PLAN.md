@@ -21,7 +21,7 @@ People quit long-term goals (saving money, fitness, learning) because the payoff
 | **2. Builder Loop v1** | 🟡 designing | See below |
 | 3. Integrations | ⏳ after Builder Loop v1 | Two-way Google Calendar, plugin architecture for ClickUp/Teams/… |
 | 4. AI resident as city advisor | ⏳ | Hybrid: rules for movement, Claude for event reactions + daily reflection with memory |
-| 5. Hosting | ⏳ | Railway/Render-style host, `staging` + `main` sites, production Docker build |
+| 5. Hosting | ⏳ last (owner, 2026-11-05: localhost until the features are done) | Railway/Render-style host, `staging` + `main` sites, production Docker build. Security items to finish first are listed by `qa-security`. |
 
 ## Phase 2 — Builder Loop v1 (decided by owner)
 **Core loop:** do a real task → a **Lv1 building of that task's category** is generated (max **5 per local day**) → **you place it** in your zone → **NPC workers** earn coins over time (capped storage; tap a building or **Collect all**) → **merge** two identical buildings + coins → next level (Lv1→Lv2→Lv3) → expand the **small starting zone** once you reach the **town level AND pay coins**.

@@ -1,23 +1,23 @@
 import { localDateKey, dueDateKey } from "./dates";
 
-export const DURATION_OPTIONS = [
-    { minutes: 15, label: "15 min" },
-    { minutes: 30, label: "30 min" },
-    { minutes: 60, label: "1 hr" },
-    { minutes: 120, label: "2 hr" },
-    { minutes: 240, label: "4 hr" },
-];
-
-export const ON_TIME_BONUS = 20;
-
 export function isTaskOverdue(dueDate) {
     const key = dueDateKey(dueDate);
     return key !== "" && key < localDateKey();
 }
 
-export function estimateTaskReward(estimatedMinutes, dueDate) {
-    const minutes = Number(estimatedMinutes) || 30;
-    const baseCoins = Math.max(10, Math.round(minutes * 1.5));
-    const bonusCoins = isTaskOverdue(dueDate) ? 0 : ON_TIME_BONUS;
-    return { baseCoins, bonusCoins, totalCoins: baseCoins + bonusCoins };
+// Live preview only. The server decides what actually gets paid.
+// Flat coins for the first few tasks of the day, then none; effort and deadlines don't change it.
+export function taskRewardPreview(builder) {
+    const coins = builder?.rules?.TASK_COINS;
+    const paid = builder?.today_counts?.tasksPaid ?? 0;
+    const cap = builder?.today_counts?.tasksPaidCap ?? builder?.rules?.TASK_COINS_PER_DAY;
+    if (coins == null || cap == null) return { coins: null, label: "", chip: "" };
+    if (paid >= cap) return { coins: 0, label: `${cap}/${cap} paid today, still builds your town`, chip: "" };
+    return { coins, label: `${coins} coins · ${paid}/${cap} paid today`, chip: String(coins) };
+}
+
+// One-off tasks build the line of their category; unknown categories build coding.
+export function lineForCategory(category) {
+    const line = String(category || "").toLowerCase();
+    return line === "fitness" || line === "finance" ? line : "coding";
 }

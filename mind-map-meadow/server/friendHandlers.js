@@ -1,7 +1,18 @@
 import { pool } from "./db.js";
 
+const MIN_SEARCH_LENGTH = 2;
+const MAX_SEARCH_LENGTH = 255;
+// A request reveals the addressee's name in the outgoing list, and there's no withdrawing one.
+// The cap keeps walking through user ids from turning into a list of every account.
+const MAX_PENDING_OUTGOING = 50;
+
+// Only accepted friends' rows select an email; for everyone else it stays null.
 function toPublicFriend(row) {
-    return { friendshipId: row.friendship_id, id: row.id, name: row.name, email: row.email, avatarUrl: row.avatar_url };
+    return { friendshipId: row.friendship_id, id: row.id, name: row.name, email: row.email ?? null, avatarUrl: row.avatar_url };
+}
+
+function escapeLikePattern(text) {
+    return text.replace(/[\\%_]/g, "\\$&");
 }
 
 async function emitFriendsState(io, userId) {
@@ -14,14 +25,14 @@ async function emitFriendsState(io, userId) {
         [userId],
     );
     const incoming = await pool.query(
-        `SELECT f.id AS friendship_id, u.id, u.name, u.email, u.avatar_url
+        `SELECT f.id AS friendship_id, u.id, u.name, u.avatar_url
          FROM friendships f JOIN users u ON u.id = f.requester_id
          WHERE f.status = 'pending' AND f.addressee_id = $1
          ORDER BY f.created_at DESC`,
         [userId],
     );
     const outgoing = await pool.query(
-        `SELECT f.id AS friendship_id, u.id, u.name, u.email, u.avatar_url
+        `SELECT f.id AS friendship_id, u.id, u.name, u.avatar_url
          FROM friendships f JOIN users u ON u.id = f.addressee_id
          WHERE f.status = 'pending' AND f.requester_id = $1
          ORDER BY f.created_at DESC`,
@@ -49,14 +60,16 @@ export function registerFriendEvents(io, socket) {
 
     socket.on("request_friends_state", () => emitFriendsState(io, userId));
 
-    socket.on("search_users", async ({ query }) => {
+    socket.on("search_users", async (payload) => {
         try {
-            const q = (query || "").trim();
-            if (q.length < 2) {
+            const q = typeof payload?.query === "string" ? payload.query.trim() : "";
+            if (q.length < MIN_SEARCH_LENGTH || q.length > MAX_SEARCH_LENGTH) {
                 socket.emit("search_users_result", []);
                 return;
             }
 
+            // Exact email or part of a name. Wildcards in the query are plain text, so it
+            // can't be used to list accounts or to guess an email a character at a time.
             const result = await pool.query(
                 `SELECT
                     u.id, u.name, u.email, u.avatar_url,
@@ -64,9 +77,10 @@ export function registerFriendEvents(io, socket) {
                  FROM users u
                  LEFT JOIN friendships f
                     ON (f.requester_id = $1 AND f.addressee_id = u.id) OR (f.requester_id = u.id AND f.addressee_id = $1)
-                 WHERE u.id <> $1 AND (u.email ILIKE $2 OR u.name ILIKE $2)
+                 WHERE u.id <> $1 AND (LOWER(u.email) = LOWER($2) OR u.name ILIKE $3 ESCAPE '\\')
+                 ORDER BY u.name, u.id
                  LIMIT 10`,
-                [userId, `%${q}%`],
+                [userId, q, `%${escapeLikePattern(q)}%`],
             );
 
             socket.emit(
@@ -74,7 +88,7 @@ export function registerFriendEvents(io, socket) {
                 result.rows.map((r) => ({
                     id: r.id,
                     name: r.name,
-                    email: r.email,
+                    email: r.friendship_status === "accepted" ? r.email : null,
                     avatarUrl: r.avatar_url,
                     friendshipId: r.friendship_id,
                     friendshipStatus: r.friendship_status, // null | 'pending' | 'accepted'
@@ -86,7 +100,9 @@ export function registerFriendEvents(io, socket) {
         }
     });
 
-    socket.on("send_friend_request", async ({ addresseeId }) => {
+    socket.on("send_friend_request", async (payload) => {
+        const addresseeId = payload?.addresseeId;
+        if (!Number.isInteger(addresseeId)) return;
         try {
             if (addresseeId === userId) return;
 
@@ -97,6 +113,11 @@ export function registerFriendEvents(io, socket) {
             const row = existing.rows[0];
 
             if (!row) {
+                const pending = await pool.query(`SELECT COUNT(*)::int AS n FROM friendships WHERE requester_id = $1 AND status = 'pending'`, [userId]);
+                if (pending.rows[0].n >= MAX_PENDING_OUTGOING) {
+                    socket.emit("builder_error", { code: "RATE_LIMITED", message: "You have a lot of friend requests waiting. Try again once some are answered." });
+                    return;
+                }
                 await pool.query(`INSERT INTO friendships (requester_id, addressee_id, status) VALUES ($1, $2, 'pending')`, [userId, addresseeId]);
             } else if (row.status === "pending" && row.requester_id === addresseeId) {
                 // They'd already requested us — sending a request back just accepts theirs.
@@ -110,7 +131,9 @@ export function registerFriendEvents(io, socket) {
         }
     });
 
-    socket.on("respond_friend_request", async ({ requestId, accept }) => {
+    socket.on("respond_friend_request", async (payload) => {
+        const { requestId, accept } = payload ?? {};
+        if (!Number.isInteger(requestId)) return;
         try {
             const result = await pool.query(`SELECT * FROM friendships WHERE id = $1 AND addressee_id = $2 AND status = 'pending'`, [requestId, userId]);
             const row = result.rows[0];
@@ -129,7 +152,9 @@ export function registerFriendEvents(io, socket) {
         }
     });
 
-    socket.on("remove_friend", async ({ friendshipId }) => {
+    socket.on("remove_friend", async (payload) => {
+        const friendshipId = payload?.friendshipId;
+        if (!Number.isInteger(friendshipId)) return;
         try {
             const result = await pool.query(`DELETE FROM friendships WHERE id = $1 AND status = 'accepted' AND (requester_id = $2 OR addressee_id = $2) RETURNING requester_id, addressee_id`, [
                 friendshipId,
@@ -146,7 +171,9 @@ export function registerFriendEvents(io, socket) {
         }
     });
 
-    socket.on("visit_friend_map", async ({ friendId }) => {
+    socket.on("visit_friend_map", async (payload) => {
+        const friendId = payload?.friendId;
+        if (!Number.isInteger(friendId)) return;
         try {
             const friendship = await pool.query(
                 `SELECT * FROM friendships WHERE status = 'accepted' AND ((requester_id = $1 AND addressee_id = $2) OR (requester_id = $2 AND addressee_id = $1))`,
@@ -161,11 +188,12 @@ export function registerFriendEvents(io, socket) {
             const host = hostResult.rows[0];
             if (!host) return;
 
+            // Placed rows only, and an explicit column list: no storage, staffing or task details.
             const buildingsResult = await pool.query(
-                `SELECT buildings.id, buildings.type, buildings.asset_key, buildings.x, buildings.y, buildings.metadata,
-                        tasks.title AS task_title, tasks.category AS task_category
-                 FROM buildings LEFT JOIN tasks ON tasks.building_id = buildings.id
-                 WHERE buildings.user_id = $1`,
+                `SELECT id, kind, line, level, asset_key, tile_x, tile_y, footprint, heritage, metadata
+                 FROM buildings
+                 WHERE user_id = $1 AND state = 'placed'
+                 ORDER BY id`,
                 [friendId],
             );
 

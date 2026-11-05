@@ -309,6 +309,20 @@ Rules: summons are never sold for real money; odds are always shown; every resul
 
 Add to migration §3: `player_stats.pending_summons SMALLINT NOT NULL DEFAULT 0 CHECK (>= 0)`, `player_stats.summons_since_epic SMALLINT NOT NULL DEFAULT 0`, `player_stats.early_bird_on DATE`, `buildings.worker_id INTEGER`, `buildings.speed_bp INTEGER NOT NULL DEFAULT 10000`, `buildings.cap_bp INTEGER NOT NULL DEFAULT 10000`, table `workers (id SERIAL PK, user_id INT NOT NULL FK users ON DELETE CASCADE, worker_key VARCHAR(30) NOT NULL, assigned_building_id INT REFERENCES buildings(id) ON DELETE SET NULL, created_at TIMESTAMPTZ DEFAULT NOW())` with an index on `user_id`. Rarity, skill and ability come from the catalog by `worker_key`, never stored per row. Grandfather in §3.3: `pending_summons = townLevel(town_xp) − 1`, inside the same once-only `builder_migrated` update.
 
+### 5.13 Guided first day
+Backend: add `player_stats.tutorial_step SMALLINT NOT NULL DEFAULT 0` and `player_stats.tutorial_done BOOLEAN NOT NULL DEFAULT false` to the migration. Send `tutorial: { step, done }` in `builder`. `set_tutorial { step:int 0..20, done:bool }` validates and saves; it pays nothing and changes nothing else. Existing users start at step 0 too, since the whole loop is new to them.
+
+Frontend only, no game changes: one small, non-blocking coach bubble in the HUD. It never covers the game with a modal, and it has a visible **Skip guide**. Steps advance by watching real `builder` and task state, not by "Next" clicks, and use the player's real tasks. No extra rewards, because the loop's own rewards are the point.
+1. Add a task you'd really do today.
+2. Finish it. You earn 10 coins and your first building.
+3. Place it from your inventory (or Auto-place).
+4. A worker is on it, and it fills with coins. Log something you spent today with 💸 (you get a free Stall).
+5. Done for today. "Come back tomorrow to collect your coins." Points at Collect all.
+6. Shown when the player first owns two identical buildings and 25 coins: "Drag one onto the other to merge."
+7. Shown the first time `pendingSummons > 0`: "You levelled up! Open your summon."
+
+After step 5 the bubble only appears for steps 6 and 7, when they become true, so the guide is finished by real play, not forced. Skip sets `done`. Add a "Replay guide" link in `ProfilePanel`. Copy is short and friendly.
+
 ### 5.11 Other readers to update (backend)
 - `aiBrain.js`: buildings query gets `AND state='placed'`, and the prompt uses `Town level` instead of `Level`.
 - `friendHandlers.visit_friend_map`: only `state='placed'`. Return `id, kind, line, level, asset_key, tile_x, tile_y, footprint, heritage, metadata(filtered)`. No storage and no staffing.
@@ -333,6 +347,7 @@ Add to migration §3: `player_stats.pending_summons SMALLINT NOT NULL DEFAULT 0 
 | `expand_zone` | `{}` | §5.8 |
 | `open_summon` | `{}` | §5.12 |
 | `assign_worker` | `{ workerId:int, buildingId:int\|null }` | §5.12 |
+| `set_tutorial` | `{ step:int, done:bool }` | §5.13 |
 | `purchase_building` | `{ assetKey:"cozy_bench"\|"garden_fountain", tileX:int, tileY:int }` | §5.2 + coins (**breaking change**) |
 | `complete_task`, `add_transaction` | unchanged | rules §5.3 / §5.4 |
 

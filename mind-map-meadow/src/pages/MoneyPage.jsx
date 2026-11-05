@@ -1,69 +1,76 @@
-import React, { useState } from "react";
-import { categoryIcon, formatCents, parseAmountToCents, weeklySummary, goalPercent } from "../utils/money";
+import React, { useEffect, useRef, useState } from "react";
+import { DeleteButton } from "../components/TaskRow";
+import { BuildingThumb, Icon, PixelBar } from "../components/Sprites";
+import { INPUT_CLASS, MUTED_TEXT_CLASS, PANEL_CLASS, btn } from "../components/hudStyles";
+import { MIN_SAVINGS_TARGET_CENTS, formatCents, parseAmountToCents, weeklySummary, goalPercent } from "../utils/money";
 
 const MAX_ACTIVE_GOALS = 5;
+const SUBMIT_WAIT_MS = 6000;
+
+const SECTION_HEADING_CLASS = "font-pixel text-lg leading-none text-[#f6e6c8]";
+const EMPTY_TEXT_CLASS = "text-xs text-[#e8c99a]";
 
 function SummaryCard({ label, value, tone }) {
     return (
-        <div className="bg-[#2a2a35] border border-slate-700 rounded-xl px-4 py-3 flex-1 min-w-[140px]">
-            <p className="text-[11px] text-slate-400">{label}</p>
-            <p className={`text-lg font-bold ${tone}`}>{value}</p>
+        <div className={`px-3 py-2 flex-1 min-w-[140px] ${PANEL_CLASS}`}>
+            <p className={MUTED_TEXT_CLASS}>{label}</p>
+            <p className={`font-pixel text-xl leading-tight ${tone}`}>{value}</p>
         </div>
     );
 }
 
-function GoalForm({ onSubmit, onCancel }) {
+// The form stays open with what you typed until the new goal is really in the list, so a
+// refused one (the daily cap, say) doesn't lose your input.
+function SavingsGoalForm({ savingsGoals, onSubmit, onCancel }) {
     const [title, setTitle] = useState("");
     const [target, setTarget] = useState("");
     const [deadline, setDeadline] = useState("");
+    const [waiting, setWaiting] = useState(false);
+    const countAtSubmit = useRef(null);
+    const waitTimer = useRef(null);
+
+    useEffect(() => () => clearTimeout(waitTimer.current), []);
+
+    useEffect(() => {
+        if (countAtSubmit.current != null && savingsGoals.length > countAtSubmit.current) onCancel();
+    }, [savingsGoals.length, onCancel]);
 
     const targetCents = parseAmountToCents(target);
-    const canSubmit = title.trim().length > 0 && targetCents !== null;
+    const belowMinimum = targetCents !== null && targetCents < MIN_SAVINGS_TARGET_CENTS;
+    const canSubmit = title.trim().length > 0 && targetCents !== null && !belowMinimum && !waiting;
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!canSubmit) return;
+        countAtSubmit.current = savingsGoals.length;
+        setWaiting(true);
+        clearTimeout(waitTimer.current);
+        waitTimer.current = setTimeout(() => setWaiting(false), SUBMIT_WAIT_MS);
         onSubmit({ title: title.trim().slice(0, 80), targetCents, deadline: deadline || null });
     };
 
     return (
-        <form onSubmit={handleSubmit} className="bg-[#2a2a35] border border-slate-700 rounded-xl p-3 flex flex-col gap-2">
-            <input
-                autoFocus
-                type="text"
-                maxLength={80}
-                placeholder="What are you saving for? (e.g. New laptop)"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="bg-[#1e1e24] border border-slate-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-indigo-400"
-            />
-            <div className="flex gap-2">
+        <form onSubmit={handleSubmit} className={`p-3 flex flex-col gap-2 ${PANEL_CLASS}`}>
+            <input autoFocus type="text" maxLength={80} placeholder="What are you saving for? (e.g. New laptop)" aria-label="Savings goal name" value={title} onChange={(e) => setTitle(e.target.value)} className={INPUT_CLASS} />
+            <div className="flex flex-wrap gap-2">
                 <input
                     type="text"
                     inputMode="decimal"
-                    placeholder="Target amount"
+                    placeholder={`Target (at least ${formatCents(MIN_SAVINGS_TARGET_CENTS)})`}
+                    aria-label="Target amount"
                     value={target}
                     onChange={(e) => setTarget(e.target.value.replace(/[^0-9.,]/g, ""))}
-                    className="flex-1 bg-[#1e1e24] border border-slate-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-indigo-400"
+                    className={`${INPUT_CLASS} !w-auto flex-1 min-w-[160px]`}
                 />
-                <input
-                    type="date"
-                    value={deadline}
-                    onChange={(e) => setDeadline(e.target.value)}
-                    className="bg-[#1e1e24] border border-slate-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-indigo-400 text-slate-300"
-                    title="Deadline (optional)"
-                />
+                <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className={`${INPUT_CLASS} !w-auto`} title="Deadline (optional)" aria-label="Deadline (optional)" />
             </div>
+            {belowMinimum && <p className="text-xs font-semibold text-[#9c2f2b]">Savings goals start at {formatCents(MIN_SAVINGS_TARGET_CENTS)}.</p>}
             <div className="flex gap-2 justify-end">
-                <button type="button" onClick={onCancel} className="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-xs font-semibold transition">
+                <button type="button" onClick={onCancel} className={btn("muted")}>
                     Cancel
                 </button>
-                <button
-                    type="submit"
-                    disabled={!canSubmit}
-                    className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 px-3 py-1.5 rounded-lg text-xs font-bold transition"
-                >
-                    Start Construction 🏗️
+                <button type="submit" disabled={!canSubmit} className={btn("confirm")}>
+                    {waiting ? "Breaking ground..." : "Start construction"}
                 </button>
             </div>
         </form>
@@ -71,15 +78,38 @@ function GoalForm({ onSubmit, onCancel }) {
 }
 
 function signedAmount(t) {
-    if (t.direction === "expense") return { text: `−${formatCents(t.amount_cents)}`, tone: "text-rose-400" };
-    if (t.direction === "income") return { text: `+${formatCents(t.amount_cents)}`, tone: "text-emerald-400" };
-    return { text: `→${formatCents(t.amount_cents)}`, tone: "text-sky-400" };
+    if (t.direction === "expense") return { text: `−${formatCents(t.amount_cents)}`, tone: "text-[#9c2f2b]" };
+    if (t.direction === "income") return { text: `+${formatCents(t.amount_cents)}`, tone: "text-[#3f7a3a]" };
+    return { text: `→${formatCents(t.amount_cents)}`, tone: "text-[#2f6f9a]" };
+}
+
+function SavingsGoalCard({ goal, onDelete }) {
+    const pct = goalPercent(goal);
+    const done = goal.status === "completed";
+    return (
+        <div className={`p-3 flex flex-col gap-2 ${PANEL_CLASS}`}>
+            <div className="flex items-start gap-2.5">
+                <BuildingThumb assetKey={`savings_project_${goal.stage ?? 0}`} size={44} />
+                <div className="min-w-0 flex-1">
+                    <p className="font-pixel text-base leading-tight truncate">{goal.title}</p>
+                    <p className={MUTED_TEXT_CLASS}>
+                        Stage {goal.stage}/4 · {done ? "Completed" : "Under construction"}
+                        {goal.deadline ? ` · by ${String(goal.deadline).slice(0, 10)}` : ""}
+                    </p>
+                </div>
+                <DeleteButton onDelete={onDelete} />
+            </div>
+            <PixelBar pct={pct} tone={done ? "gold" : "blue"} />
+            <p className="text-xs">
+                <span className="font-pixel text-sm">{formatCents(goal.saved_cents)}</span> / <span className="font-pixel text-sm">{formatCents(goal.target_cents)}</span> <span className="text-[#6b3f22]">({pct}%)</span>
+            </p>
+        </div>
+    );
 }
 
 export default function MoneyPage({ transactions, savingsGoals, onAddSavingsGoal, onDeleteSavingsGoal, onDeleteTransaction, onOpenQuickAdd }) {
     const [isAddingGoal, setIsAddingGoal] = useState(false);
-    const [confirmDeleteGoalId, setConfirmDeleteGoalId] = useState(null);
-    const [confirmDeleteTxId, setConfirmDeleteTxId] = useState(null);
+    const closeGoalForm = useRef(() => setIsAddingGoal(false)).current;
 
     const summary = weeklySummary(transactions);
     const netCents = summary.incomeCents - summary.spentCents;
@@ -91,160 +121,76 @@ export default function MoneyPage({ transactions, savingsGoals, onAddSavingsGoal
     const recent = transactions.slice(0, 50);
 
     return (
-        <div className="max-w-3xl flex flex-col gap-6">
-            <div className="flex justify-between items-center">
-                <h2 className="text-lg font-bold">💰 Money</h2>
-                {onOpenQuickAdd && (
-                    <button onClick={onOpenQuickAdd} className="bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg text-xs font-bold transition">
-                        💸 Quick Log
-                    </button>
-                )}
-            </div>
+        <div className="max-w-3xl w-full mx-auto flex flex-col gap-6">
+            {onOpenQuickAdd && (
+                <button onClick={onOpenQuickAdd} className={btn("next", "sm:self-start")}>
+                    <Icon name="log" /> Quick log
+                </button>
+            )}
 
             {/* This week */}
-            <section className="flex flex-col gap-3">
-                <h3 className="text-sm font-bold text-slate-200">This week</h3>
-                <div className="flex flex-wrap gap-3">
-                    <SummaryCard label="Spent" value={formatCents(summary.spentCents)} tone="text-rose-400" />
-                    <SummaryCard label="Income" value={formatCents(summary.incomeCents)} tone="text-emerald-400" />
-                    <SummaryCard label="Income − spent" value={`${netCents < 0 ? "−" : ""}${formatCents(Math.abs(netCents))}`} tone={netCents < 0 ? "text-rose-300" : "text-emerald-300"} />
-                    <SummaryCard label="Put into savings" value={formatCents(summary.savedCents)} tone="text-sky-400" />
+            <section className="flex flex-col gap-2.5">
+                <h3 className={SECTION_HEADING_CLASS}>This week</h3>
+                <div className="flex flex-wrap gap-2.5">
+                    <SummaryCard label="Spent" value={formatCents(summary.spentCents)} tone="text-[#9c2f2b]" />
+                    <SummaryCard label="Income" value={formatCents(summary.incomeCents)} tone="text-[#3f7a3a]" />
+                    <SummaryCard label="Income − spent" value={`${netCents < 0 ? "−" : ""}${formatCents(Math.abs(netCents))}`} tone={netCents < 0 ? "text-[#9c2f2b]" : "text-[#3f7a3a]"} />
+                    <SummaryCard label="Put into savings" value={formatCents(summary.savedCents)} tone="text-[#2f6f9a]" />
                 </div>
                 {categoryRows.length > 0 ? (
-                    <div className="bg-[#2a2a35] border border-slate-700 rounded-xl p-3 flex flex-col gap-2">
+                    <div className={`p-3 flex flex-col gap-2 ${PANEL_CLASS}`}>
                         {categoryRows.map(([category, cents]) => (
                             <div key={category} className="flex items-center gap-2 text-xs">
-                                <span className="w-28 shrink-0 text-slate-300">
-                                    {categoryIcon("expense", category)} {category}
-                                </span>
-                                <div className="flex-1 h-2 bg-[#1e1e24] rounded-full overflow-hidden">
-                                    <div className="h-full bg-rose-500/80 rounded-full" style={{ width: `${maxCategory ? (cents / maxCategory) * 100 : 0}%` }} />
-                                </div>
-                                <span className="w-24 text-right text-slate-200 font-semibold">{formatCents(cents)}</span>
+                                <span className="w-24 shrink-0 truncate">{category}</span>
+                                <PixelBar pct={maxCategory ? (cents / maxCategory) * 100 : 0} tone="red" className="flex-1" />
+                                <span className="font-pixel text-sm leading-none w-20 text-right">{formatCents(cents)}</span>
                             </div>
                         ))}
                     </div>
                 ) : (
-                    <p className="text-xs text-slate-500">No spending logged this week yet. Every log earns coins — honest logs count, big or small.</p>
+                    <p className={EMPTY_TEXT_CLASS}>No spending logged this week yet. Every log earns coins, whatever the amount.</p>
                 )}
             </section>
 
             {/* Savings goals */}
-            <section className="flex flex-col gap-3">
-                <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-bold text-slate-200">🏗️ Savings goals</h3>
+            <section className="flex flex-col gap-2.5">
+                <div className="flex justify-between items-center gap-2">
+                    <h3 className={SECTION_HEADING_CLASS}>Savings goals</h3>
                     {!isAddingGoal && (
-                        <button
-                            onClick={() => setIsAddingGoal(true)}
-                            disabled={activeGoalCount >= MAX_ACTIVE_GOALS}
-                            title={activeGoalCount >= MAX_ACTIVE_GOALS ? `Up to ${MAX_ACTIVE_GOALS} active goals` : undefined}
-                            className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 px-3 py-1.5 rounded-lg text-xs font-bold transition"
-                        >
-                            + New goal
+                        <button onClick={() => setIsAddingGoal(true)} disabled={activeGoalCount >= MAX_ACTIVE_GOALS} title={activeGoalCount >= MAX_ACTIVE_GOALS ? `Up to ${MAX_ACTIVE_GOALS} active savings goals` : undefined} className={btn("muted")}>
+                            New savings goal
                         </button>
                     )}
                 </div>
 
-                {isAddingGoal && (
-                    <GoalForm
-                        onSubmit={(values) => {
-                            onAddSavingsGoal(values);
-                            setIsAddingGoal(false);
-                        }}
-                        onCancel={() => setIsAddingGoal(false)}
-                    />
-                )}
+                {isAddingGoal && <SavingsGoalForm savingsGoals={savingsGoals} onSubmit={onAddSavingsGoal} onCancel={closeGoalForm} />}
 
-                {savingsGoals.length === 0 && !isAddingGoal && (
-                    <p className="text-xs text-slate-500">No savings goals yet. Start one and a construction site appears in your meadow — it grows at every 25% you save.</p>
-                )}
+                {savingsGoals.length === 0 && !isAddingGoal && <p className={EMPTY_TEXT_CLASS}>No savings goals yet. Start one and a construction site appears in your meadow. It grows at every 25% you save.</p>}
 
-                {savingsGoals.map((goal) => {
-                    const pct = goalPercent(goal);
-                    const done = goal.status === "completed";
-                    return (
-                        <div key={goal.id} className="bg-[#2a2a35] border border-slate-700 rounded-xl p-3 flex flex-col gap-2">
-                            <div className="flex justify-between items-start gap-2">
-                                <div>
-                                    <p className="text-sm font-bold">
-                                        {done ? "🏛️" : "🏗️"} {goal.title}
-                                    </p>
-                                    <p className="text-[11px] text-slate-400">
-                                        Stage {goal.stage}/4 · {done ? "Completed 🎉" : "Under construction"}
-                                        {goal.deadline ? ` · by ${String(goal.deadline).slice(0, 10)}` : ""}
-                                    </p>
-                                </div>
-                                {confirmDeleteGoalId === goal.id ? (
-                                    <div className="flex gap-1">
-                                        <button
-                                            onClick={() => {
-                                                onDeleteSavingsGoal(goal.id);
-                                                setConfirmDeleteGoalId(null);
-                                            }}
-                                            className="bg-rose-600 hover:bg-rose-500 px-2 py-1 rounded text-[11px] font-bold"
-                                        >
-                                            Delete
-                                        </button>
-                                        <button onClick={() => setConfirmDeleteGoalId(null)} className="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-[11px]">
-                                            Keep
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <button onClick={() => setConfirmDeleteGoalId(goal.id)} className="text-slate-500 hover:text-rose-400 text-xs px-1" title="Delete goal">
-                                        🗑️
-                                    </button>
-                                )}
-                            </div>
-                            <div className="h-2.5 bg-[#1e1e24] rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full ${done ? "bg-amber-400" : "bg-sky-500"}`} style={{ width: `${pct}%` }} />
-                            </div>
-                            <p className="text-[11px] text-slate-300">
-                                {formatCents(goal.saved_cents)} / {formatCents(goal.target_cents)} <span className="text-slate-500">({pct}%)</span>
-                            </p>
-                        </div>
-                    );
-                })}
+                {savingsGoals.map((goal) => (
+                    <SavingsGoalCard key={goal.id} goal={goal} onDelete={() => onDeleteSavingsGoal(goal.id)} />
+                ))}
             </section>
 
             {/* Recent transactions */}
-            <section className="flex flex-col gap-3">
-                <h3 className="text-sm font-bold text-slate-200">Recent logs</h3>
+            <section className="flex flex-col gap-2.5">
+                <h3 className={SECTION_HEADING_CLASS}>Recent logs</h3>
                 {recent.length === 0 ? (
-                    <p className="text-xs text-slate-500">Nothing logged yet. Tap 💸 Log in the meadow — it takes five seconds.</p>
+                    <p className={EMPTY_TEXT_CLASS}>Nothing logged yet. Tap Log in the meadow. It takes five seconds.</p>
                 ) : (
-                    <div className="bg-[#2a2a35] border border-slate-700 rounded-xl divide-y divide-slate-700/60">
+                    <div className={`px-3 py-1 flex flex-col ${PANEL_CLASS}`}>
                         {recent.map((t) => {
                             const amount = signedAmount(t);
                             const label = t.direction === "saving" ? goalTitleById[t.savings_goal_id] || "Savings" : t.category;
                             return (
-                                <div key={t.id} className="flex items-center gap-3 px-3 py-2 text-xs">
-                                    <span className="w-20 shrink-0 text-slate-500">{String(t.occurred_on).slice(0, 10)}</span>
-                                    <span className="text-base">{categoryIcon(t.direction, t.category)}</span>
+                                <div key={t.id} className="flex items-center gap-2.5 py-1.5 text-xs border-b-2 border-[#e8c99a] last:border-b-0">
+                                    <span className="hidden sm:block w-20 shrink-0 text-[#6b3f22]">{String(t.occurred_on).slice(0, 10)}</span>
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-slate-200 font-semibold truncate">{label}</p>
-                                        {t.note && <p className="text-slate-500 truncate">{t.note}</p>}
+                                        <p className="font-semibold truncate">{label}</p>
+                                        {t.note && <p className="text-[#6b3f22] truncate">{t.note}</p>}
                                     </div>
-                                    <span className={`font-bold ${amount.tone}`}>{amount.text}</span>
-                                    {confirmDeleteTxId === t.id ? (
-                                        <div className="flex gap-1">
-                                            <button
-                                                onClick={() => {
-                                                    onDeleteTransaction(t.id);
-                                                    setConfirmDeleteTxId(null);
-                                                }}
-                                                className="bg-rose-600 hover:bg-rose-500 px-2 py-0.5 rounded text-[11px] font-bold"
-                                            >
-                                                Delete
-                                            </button>
-                                            <button onClick={() => setConfirmDeleteTxId(null)} className="bg-slate-700 hover:bg-slate-600 px-2 py-0.5 rounded text-[11px]">
-                                                Keep
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <button onClick={() => setConfirmDeleteTxId(t.id)} className="text-slate-500 hover:text-rose-400 px-1" title="Delete log">
-                                            🗑️
-                                        </button>
-                                    )}
+                                    <span className={`font-pixel text-sm leading-none ${amount.tone}`}>{amount.text}</span>
+                                    <DeleteButton onDelete={() => onDeleteTransaction(t.id)} />
                                 </div>
                             );
                         })}

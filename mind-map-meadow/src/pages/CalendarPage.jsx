@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import TaskForm from "../components/TaskForm";
-import { estimateTaskReward } from "../utils/rewards";
+import { CompletedTaskRow, PendingTaskRow } from "../components/TaskRow";
+import { Coin } from "../components/Sprites";
+import { MUTED_TEXT_CLASS, PANEL_CLASS, btn } from "../components/hudStyles";
 import { localDateKey, dueDateKey, completedDateKey } from "../utils/dates";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -9,7 +11,7 @@ function formatMonthLabel(year, month) {
     return new Date(year, month, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-export default function CalendarPage({ tasks, onAddTask, onEditTask, onDeleteTask, onCompleteTask }) {
+export default function CalendarPage({ tasks, onAddTask, onEditTask, onDeleteTask, onCompleteTask, rewardPreview, rules }) {
     const today = new Date();
     const todayKey = localDateKey(today);
 
@@ -18,7 +20,6 @@ export default function CalendarPage({ tasks, onAddTask, onEditTask, onDeleteTas
     const [selectedDate, setSelectedDate] = useState(todayKey);
     const [isAdding, setIsAdding] = useState(false);
     const [editingId, setEditingId] = useState(null);
-    const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
     // Group all tasks by due date (unfinished) and completion date (done), across every day
     const pendingByDate = {};
@@ -76,26 +77,21 @@ export default function CalendarPage({ tasks, onAddTask, onEditTask, onDeleteTas
         setEditingId(null);
     };
 
-    const handleDelete = (id) => {
-        onDeleteTask(id);
-        setConfirmDeleteId(null);
-    };
-
     return (
-        <div className="flex flex-col gap-5 max-w-3xl w-full mx-auto">
+        <div className="flex flex-col gap-4 max-w-3xl w-full mx-auto">
             <div className="flex items-center justify-between">
-                <button onClick={() => goToMonth(-1)} className="bg-[#2a2a35] hover:bg-slate-700 text-white w-8 h-8 rounded-lg text-sm font-bold transition">
+                <button onClick={() => goToMonth(-1)} aria-label="Previous month" className={btn("muted", "font-pixel !text-base w-11 lg:w-9")}>
                     ‹
                 </button>
-                <h3 className="text-sm font-bold text-white">{formatMonthLabel(viewYear, viewMonth)}</h3>
-                <button onClick={() => goToMonth(1)} className="bg-[#2a2a35] hover:bg-slate-700 text-white w-8 h-8 rounded-lg text-sm font-bold transition">
+                <h3 className="font-pixel text-xl leading-none text-[#f6e6c8]">{formatMonthLabel(viewYear, viewMonth)}</h3>
+                <button onClick={() => goToMonth(1)} aria-label="Next month" className={btn("muted", "font-pixel !text-base w-11 lg:w-9")}>
                     ›
                 </button>
             </div>
 
-            <div className="grid grid-cols-7 gap-1.5">
+            <div className="grid grid-cols-7 gap-1">
                 {WEEKDAY_LABELS.map((label) => (
-                    <div key={label} className="text-center text-[10px] font-bold text-slate-500 uppercase pb-1">
+                    <div key={label} className="text-center text-xs font-bold text-[#e8c99a] pb-0.5">
                         {label}
                     </div>
                 ))}
@@ -111,37 +107,33 @@ export default function CalendarPage({ tasks, onAddTask, onEditTask, onDeleteTas
                         <button
                             key={dateKey}
                             onClick={() => selectDay(dateKey)}
-                            className={`relative h-14 rounded-lg border text-xs font-semibold flex flex-col items-center justify-center gap-0.5 transition ${
-                                isSelected
-                                    ? "bg-emerald-600/20 border-emerald-500 text-white"
-                                    : isToday
-                                      ? "bg-[#2a2a35] border-blue-500 text-white"
-                                      : "bg-[#242430] border-slate-700 text-slate-300 hover:border-slate-500"
+                            aria-pressed={isSelected}
+                            aria-label={`${dateKey}${isToday ? ", today" : ""}${pendingCount ? `, ${pendingCount} to do` : ""}${completedCount ? `, ${completedCount} done` : ""}`}
+                            className={`relative h-14 rounded-sm border-2 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                                isSelected ? "bg-[#e0a526] border-[#2b1e1a] text-[#2b1e1a]" : isToday ? "bg-[#f6e6c8] border-[#e0a526] text-[#2b1e1a]" : "bg-[#e8c99a] border-[#2b1e1a] text-[#2b1e1a] hover:bg-[#f6e6c8]"
                             }`}
                         >
-                            <span>{day}</span>
-                            {pendingCount > 0 && <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1 rounded-full leading-none">{pendingCount}</span>}
-                            {completedCount > 0 && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                            <span className="font-pixel text-sm leading-none">{day}</span>
+                            {pendingCount > 0 && <span className="font-pixel text-xs bg-[#2b1e1a] text-[#ffd65a] px-1 rounded-sm leading-tight">{pendingCount}</span>}
+                            {completedCount > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-[#3f7a3a] border border-[#2b1e1a]" />}
                         </button>
                     );
                 })}
             </div>
 
-            <div className="bg-[#2a2a35] border border-slate-700 rounded-xl p-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-white">{selectedDate === todayKey ? "Today" : selectedDate}</h4>
+            <div className={`p-3 flex flex-col gap-1 ${PANEL_CLASS}`}>
+                <div className="flex items-center justify-between gap-2">
+                    <h4 className="font-pixel text-base leading-none">{selectedDate === todayKey ? "Today" : selectedDate}</h4>
                     {!isAdding && (
-                        <button onClick={() => setIsAdding(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 px-3 rounded-lg text-[11px] transition">
-                            ➕ Add for this day
+                        <button onClick={() => setIsAdding(true)} className={btn("muted")}>
+                            Add a task for this day
                         </button>
                     )}
                 </div>
 
-                {isAdding && <TaskForm initialValues={{ due_date: selectedDate }} onSubmit={handleAdd} onCancel={() => setIsAdding(false)} submitLabel="Create Goal" />}
+                {isAdding && <TaskForm initialValues={{ due_date: selectedDate }} onSubmit={handleAdd} onCancel={() => setIsAdding(false)} submitLabel="Add task" rewardPreview={rewardPreview} rules={rules} />}
 
-                {!isAdding && selectedPending.length === 0 && selectedCompleted.length === 0 && (
-                    <p className="text-[11px] text-slate-500 text-center py-3 italic">Nothing scheduled this day.</p>
-                )}
+                {!isAdding && selectedPending.length === 0 && selectedCompleted.length === 0 && <p className={`${MUTED_TEXT_CLASS} text-center py-3`}>Nothing scheduled this day.</p>}
 
                 {!isAdding &&
                     selectedPending.map((task) => {
@@ -152,53 +144,31 @@ export default function CalendarPage({ tasks, onAddTask, onEditTask, onDeleteTas
                                     initialValues={{ title: task.title, category: task.category, due_date: selectedDate, estimated_minutes: task.estimated_minutes }}
                                     onSubmit={(values) => handleEdit(task.id, values)}
                                     onCancel={() => setEditingId(null)}
-                                    submitLabel="Save Changes"
+                                    submitLabel="Save changes"
+                                    rewardPreview={rewardPreview}
+                                    rules={rules}
                                 />
                             );
                         }
-                        const reward = estimateTaskReward(task.estimated_minutes, task.due_date);
                         return (
-                            <div key={task.id} className="bg-[#1e1e24] p-2.5 rounded-lg flex items-center justify-between gap-2 border-l-4 border-yellow-500">
-                                <div className="min-w-0 flex-1">
-                                    <strong className="text-xs text-white block truncate">{task.title}</strong>
-                                    <div className="flex gap-2 mt-0.5 text-[10px] text-slate-400 font-semibold">
-                                        <span className="uppercase">{task.category}</span>
-                                        <span className="text-yellow-400">🪙 {reward.bonusCoins > 0 ? `${reward.baseCoins}+${reward.bonusCoins}` : reward.baseCoins}</span>
-                                    </div>
-                                </div>
-                                <div className="flex gap-1.5 shrink-0">
-                                    <button onClick={() => setEditingId(task.id)} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-1 px-2 rounded text-[11px] transition">
-                                        ✏️
-                                    </button>
-                                    {confirmDeleteId === task.id ? (
-                                        <button onClick={() => handleDelete(task.id)} className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-1 px-2 rounded text-[11px] transition">
-                                            Confirm?
-                                        </button>
-                                    ) : (
-                                        <button onClick={() => setConfirmDeleteId(task.id)} className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-1 px-2 rounded text-[11px] transition">
-                                            🗑️
-                                        </button>
-                                    )}
-                                    <button onClick={() => onCompleteTask(task.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1 px-2 rounded text-[11px] transition">
-                                        ✓ Done
-                                    </button>
-                                </div>
-                            </div>
+                            <PendingTaskRow
+                                key={task.id}
+                                task={task}
+                                meta={
+                                    rewardPreview?.chip && (
+                                        <span className="flex items-center gap-1">
+                                            <Coin /> <span className="font-pixel text-sm leading-none text-[#2b1e1a]">{rewardPreview.chip}</span>
+                                        </span>
+                                    )
+                                }
+                                onEdit={() => setEditingId(task.id)}
+                                onDelete={() => onDeleteTask(task.id)}
+                                onComplete={() => onCompleteTask(task.id)}
+                            />
                         );
                     })}
 
-                {!isAdding &&
-                    selectedCompleted.map((task) => (
-                        <div key={task.id} className="bg-[#1e1e24] p-2.5 rounded-lg flex items-center justify-between gap-2 border-l-4 border-emerald-600 opacity-75">
-                            <div className="min-w-0 flex-1">
-                                <strong className="text-xs text-slate-300 block truncate line-through">{task.title}</strong>
-                                <div className="flex gap-2 mt-0.5 text-[10px] text-slate-500 font-semibold">
-                                    <span className="uppercase">{task.category}</span>
-                                    <span className="text-yellow-500">🪙 +{task.coins_earned}</span>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
+                {!isAdding && selectedCompleted.map((task) => <CompletedTaskRow key={task.id} task={task} />)}
             </div>
         </div>
     );

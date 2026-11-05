@@ -21,3 +21,5 @@ Thumbs.db
 
 # Temporary files
 temp/
+# Local database backups (real data, never commit)
+backups/

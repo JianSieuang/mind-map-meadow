@@ -1,10 +1,13 @@
 import { pool } from "./db.js";
 import { localDateKey, isRealDate, addDaysToDateKey } from "./timezone.js";
+import { withTransaction, lockStatsRow, rollDailyCounters, afterCommit } from "./tx.js";
+import { CFG, MAP_RECT } from "./builderRules.js";
+import { addTownXp, emitBuilderState, fetchBuilderState, fetchOccupied, findFreeSpot, insertLineBuilding, pixelFor, touchActivity, zoneFor } from "./builderState.js";
 
 const MAX_AMOUNT_CENTS = 100000000;
-const LOG_REWARD_COINS = 5;
-const REWARDED_LOGS_PER_DAY = 6;
-const MILESTONE_REWARD_COINS = 40;
+const LOG_REWARD_COINS = CFG.LOG_COINS;
+const REWARDED_LOGS_PER_DAY = CFG.LOG_COINS_PER_DAY;
+const MILESTONE_REWARD_COINS = CFG.SAVINGS_MILESTONE_COINS;
 const MAX_STAGE = 4;
 const MAX_ACTIVE_GOALS = 5;
 const MIN_GOAL_TARGET_CENTS = 1000;
@@ -63,30 +66,7 @@ async function emitRefreshMoney(io, userId) {
     io.to(roomFor(userId)).emit("refresh_money", { stats: stats.rows[0], ...money });
 }
 
-// Runs fn(client) inside BEGIN/COMMIT, rolling back on any throw.
-async function withTransaction(fn) {
-    const client = await pool.connect();
-    try {
-        await client.query("BEGIN");
-        const result = await fn(client);
-        await client.query("COMMIT");
-        return result;
-    } catch (err) {
-        await client.query("ROLLBACK").catch(() => {});
-        throw err;
-    } finally {
-        client.release();
-    }
-}
-
 class MoneyValidationError extends Error {}
-
-// Ensures the user's stats row exists (accounts hit by the old username-default bug
-// may lack one) and locks it so the daily reward cap and coin math can't race.
-async function lockStatsRow(client, userId) {
-    await client.query("INSERT INTO player_stats (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", [userId]);
-    await client.query("SELECT id FROM player_stats WHERE user_id = $1 FOR UPDATE", [userId]);
-}
 
 export function registerMoneyEvents(io, socket) {
     const userId = socket.data.userId;
@@ -95,8 +75,8 @@ export function registerMoneyEvents(io, socket) {
 
     const fail = (message) => socket.emit("money_error", message);
 
-    socket.on("add_transaction", async (payload = {}) => {
-        const { amountCents, direction, category, note, occurredOn, savingsGoalId } = payload;
+    socket.on("add_transaction", async (payload) => {
+        const { amountCents, direction, category, note, occurredOn, savingsGoalId } = payload ?? {};
 
         if (!isValidCents(amountCents)) return fail("Amount must be between 0.01 and 1,000,000.");
         if (!Object.hasOwn(CATEGORIES, direction)) return fail("Unknown transaction type.");
@@ -113,8 +93,12 @@ export function registerMoneyEvents(io, socket) {
         if (direction === "saving" && !Number.isInteger(savingsGoalId)) return fail("Pick a savings goal.");
 
         try {
+            const now = new Date();
             const outcome = await withTransaction(async (client) => {
-                await lockStatsRow(client, userId);
+                const stats = await lockStatsRow(client, userId);
+                await rollDailyCounters(client, stats, today);
+                // The forward-only day: reconnecting in a west timezone can't reopen the caps below.
+                const capDay = stats.counters_day;
 
                 let goal = null;
                 if (direction === "saving") {
@@ -124,13 +108,17 @@ export function registerMoneyEvents(io, socket) {
                 }
 
                 // Includes soft-deleted rows on purpose: deleting a log must not free up a rewarded slot.
-                const rewardedToday = await client.query(`SELECT COUNT(*)::int AS n FROM transactions WHERE user_id = $1 AND reward_coins > 0 AND logged_on = $2`, [userId, today]);
+                const rewardedToday = await client.query(`SELECT COUNT(*)::int AS n FROM transactions WHERE user_id = $1 AND reward_coins > 0 AND logged_on = $2`, [userId, capDay]);
                 const logReward = rewardedToday.rows[0].n < REWARDED_LOGS_PER_DAY ? LOG_REWARD_COINS : 0;
+
+                // Includes soft-deleted rows too: "first log of the day" can only happen once a day.
+                const loggedToday = await client.query(`SELECT COUNT(*)::int AS n FROM transactions WHERE user_id = $1 AND logged_on = $2`, [userId, capDay]);
+                const isFirstLogToday = loggedToday.rows[0].n === 0;
 
                 await client.query(
                     `INSERT INTO transactions (user_id, amount_cents, direction, category, note, occurred_on, logged_on, reward_coins, savings_goal_id)
                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-                    [userId, amountCents, direction, normalizeCategory(direction, category), normalizeNote(note), occurredDate, today, logReward, goal ? goal.id : null],
+                    [userId, amountCents, direction, normalizeCategory(direction, category), normalizeNote(note), occurredDate, capDay, logReward, goal ? goal.id : null],
                 );
 
                 const rewards = [];
@@ -159,15 +147,34 @@ export function registerMoneyEvents(io, socket) {
                     }
                 }
 
+                // The day's first log generates a Finance Stall. The amount plays no part in it,
+                // and deleting the log later never takes the stall back.
+                let stall = null;
+                if (isFirstLogToday && stats.buildings_today < CFG.DAILY_BUILDING_CAP) {
+                    stall = await insertLineBuilding(client, { userId, line: "finance", state: "inventory", source: "money_log", today: capDay, content: "Daily money log" });
+                    if (stall) {
+                        await client.query("UPDATE player_stats SET buildings_today = buildings_today + 1 WHERE user_id = $1", [userId]);
+                        await addTownXp(client, userId, 1);
+                    }
+                }
+
+                await touchActivity(client, stats, userId, now);
+
                 const totalCoins = rewards.reduce((sum, r) => sum + r.coins, 0);
                 if (totalCoins > 0) await client.query("UPDATE player_stats SET coins = coins + $1 WHERE user_id = $2", [totalCoins, userId]);
 
-                return { rewards, updatedBuilding };
+                return { rewards, updatedBuilding, stallId: stall ? stall.id : null };
             });
 
-            if (outcome.updatedBuilding) io.to(room).emit("building_updated", outcome.updatedBuilding);
-            for (const reward of outcome.rewards) io.to(room).emit("money_reward", reward);
-            await emitRefreshMoney(io, userId);
+            await afterCommit("add_transaction", async () => {
+                const state = await fetchBuilderState(pool, userId, timeZone());
+                const target = io.to(room);
+                if (outcome.updatedBuilding) target.emit("building_updated", outcome.updatedBuilding);
+                if (outcome.stallId) target.emit("building_generated", { building: state.inventory.find((b) => b.id === outcome.stallId), reason: "money_log" });
+                for (const reward of outcome.rewards) target.emit("money_reward", reward);
+                target.emit("builder_state", state);
+            });
+            await afterCommit("add_transaction refresh", () => emitRefreshMoney(io, userId));
         } catch (err) {
             if (err instanceof MoneyValidationError) return fail(err.message);
             console.error("❌ [Add Transaction Error]:", err.message);
@@ -194,15 +201,18 @@ export function registerMoneyEvents(io, socket) {
                 }
                 return true;
             });
-            if (deleted) await emitRefreshMoney(io, userId);
+            if (deleted) {
+                await afterCommit("delete_transaction", () => emitBuilderState(io, userId, timeZone()));
+                await afterCommit("delete_transaction refresh", () => emitRefreshMoney(io, userId));
+            }
         } catch (err) {
             console.error("❌ [Delete Transaction Error]:", err.message);
         }
     });
 
-    socket.on("add_savings_goal", async (payload = {}) => {
-        const { targetCents, deadline } = payload;
-        const title = typeof payload.title === "string" ? payload.title.trim() : "";
+    socket.on("add_savings_goal", async (payload) => {
+        const { targetCents, deadline, title: rawTitle } = payload ?? {};
+        const title = typeof rawTitle === "string" ? rawTitle.trim() : "";
 
         if (title.length < 1 || title.length > 80) return fail("Goal name must be 1–80 characters.");
         if (!isValidCents(targetCents)) return fail("Target must be between 10.00 and 1,000,000.");
@@ -218,37 +228,41 @@ export function registerMoneyEvents(io, socket) {
         }
 
         try {
-            const building = await withTransaction(async (client) => {
-                await lockStatsRow(client, userId);
+            await withTransaction(async (client) => {
+                const stats = await lockStatsRow(client, userId);
+                await rollDailyCounters(client, stats, today);
+                const capDay = stats.counters_day; // forward-only, as in add_transaction
 
                 const activeCount = await client.query(`SELECT COUNT(*)::int AS n FROM savings_goals WHERE user_id = $1 AND status = 'active' AND deleted_at IS NULL`, [userId]);
                 if (activeCount.rows[0].n >= MAX_ACTIVE_GOALS) throw new MoneyValidationError(`You can have up to ${MAX_ACTIVE_GOALS} active savings goals.`);
 
                 // Includes soft-deleted goals so create/delete can't dodge the daily cap.
-                const createdToday = await client.query(`SELECT COUNT(*)::int AS n FROM savings_goals WHERE user_id = $1 AND created_on = $2`, [userId, today]);
+                const createdToday = await client.query(`SELECT COUNT(*)::int AS n FROM savings_goals WHERE user_id = $1 AND created_on = $2`, [userId, capDay]);
                 if (createdToday.rows[0].n >= MAX_NEW_GOALS_PER_DAY) throw new MoneyValidationError(`You can start up to ${MAX_NEW_GOALS_PER_DAY} new savings goals per day.`);
 
                 const goalResult = await client.query(
                     `INSERT INTO savings_goals (user_id, title, target_cents, deadline, created_on) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-                    [userId, title, targetCents, deadlineDate, today],
+                    [userId, title, targetCents, deadlineDate, capDay],
                 );
                 const goalId = goalResult.rows[0].id;
 
-                const gridX = Math.floor(Math.random() * (25 - 4) + 4);
-                const gridY = Math.floor(Math.random() * (18 - 4) + 4);
-                const buildingResult = await client.query(
-                    `INSERT INTO buildings (type, asset_key, x, y, content, metadata, user_id)
-                     VALUES ('Savings', 'savings_project', $1, $2, $3, $4, $5) RETURNING *`,
-                    [gridX * 48 + 24, gridY * 48 + 24, `Savings project: ${title}`, JSON.stringify({ stage: 0, savingsGoalId: goalId }), userId],
-                );
-                const newBuilding = buildingResult.rows[0];
+                // First free spot inside the zone, else anywhere on the map. A goal is never
+                // refused for lack of room; (0,0) only if all 70x50 tiles are taken.
+                const footprint = CFG.FOOTPRINT.savings;
+                const occupied = await fetchOccupied(client, userId);
+                const spot = findFreeSpot(occupied, zoneFor(stats.zone_step), footprint) ?? findFreeSpot(occupied, MAP_RECT, footprint) ?? { tileX: 0, tileY: 0 };
 
-                await client.query("UPDATE savings_goals SET building_id = $1 WHERE id = $2", [newBuilding.id, goalId]);
-                return newBuilding;
+                const buildingResult = await client.query(
+                    `INSERT INTO buildings (type, asset_key, x, y, content, metadata, user_id, kind, state, tile_x, tile_y, footprint, source, generated_on)
+                     VALUES ('Savings', 'savings_project', $1, $2, $3, $4, $5, 'savings', 'placed', $6, $7, $8, 'savings', $9) RETURNING id`,
+                    [pixelFor(spot.tileX, footprint), pixelFor(spot.tileY, footprint), `Savings project: ${title}`, JSON.stringify({ stage: 0, savingsGoalId: goalId }), userId, spot.tileX, spot.tileY, footprint, capDay],
+                );
+
+                await client.query("UPDATE savings_goals SET building_id = $1 WHERE id = $2", [buildingResult.rows[0].id, goalId]);
             });
 
-            io.to(room).emit("building_spawned", building);
-            await emitRefreshMoney(io, userId);
+            await afterCommit("savings goal", () => emitBuilderState(io, userId, timeZone()));
+            await afterCommit("savings goal refresh", () => emitRefreshMoney(io, userId));
         } catch (err) {
             if (err instanceof MoneyValidationError) return fail(err.message);
             console.error("❌ [Add Savings Goal Error]:", err.message);
@@ -260,6 +274,7 @@ export function registerMoneyEvents(io, socket) {
         if (!Number.isInteger(goalId)) return;
         try {
             const removedBuildingId = await withTransaction(async (client) => {
+                await lockStatsRow(client, userId);
                 // Soft delete: the goal keeps counting toward the per-day creation cap.
                 const goalResult = await client.query(
                     `UPDATE savings_goals SET deleted_at = NOW() WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL RETURNING building_id`,
@@ -275,7 +290,8 @@ export function registerMoneyEvents(io, socket) {
 
             if (removedBuildingId === undefined) return;
             if (removedBuildingId) io.to(room).emit("building_removed", { id: removedBuildingId });
-            await emitRefreshMoney(io, userId);
+            await afterCommit("savings goal", () => emitBuilderState(io, userId, timeZone()));
+            await afterCommit("savings goal refresh", () => emitRefreshMoney(io, userId));
         } catch (err) {
             console.error("❌ [Delete Savings Goal Error]:", err.message);
         }

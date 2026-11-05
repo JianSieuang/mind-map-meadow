@@ -1,26 +1,12 @@
-import { localDateKey } from "./timezone.js";
-
-export const ON_TIME_BONUS = 20;
-
-// dueDate is a "YYYY-MM-DD" string; on time means completed on or before that day in the user's timezone.
-export function computeTaskReward(estimatedMinutes, dueDate, completedAt = new Date(), timeZone = "UTC") {
-    const minutes = Number(estimatedMinutes) || 30;
-    const baseCoins = Math.max(10, Math.round(minutes * 1.5));
-
-    const isOnTime = !dueDate || localDateKey(completedAt, timeZone) <= String(dueDate).slice(0, 10);
-
-    const bonusCoins = isOnTime ? ON_TIME_BONUS : 0;
-    return { baseCoins, bonusCoins, totalCoins: baseCoins + bonusCoins, isOnTime };
+// Town level: the smallest L with xp < 5*L*(L+1). TL2@10, TL3@30, TL4@60, TL5@100 ...
+export function townLevel(xp) {
+    const value = Math.max(0, Math.floor(Number(xp) || 0));
+    let level = 1;
+    while (value >= 5 * level * (level + 1)) level += 1;
+    return level;
 }
 
-export function applyLevelUp(level, xp) {
-    let newLevel = level;
-    let newXp = xp;
-    let threshold = newLevel * 100;
-    while (newXp >= threshold) {
-        newXp -= threshold;
-        newLevel += 1;
-        threshold = newLevel * 100;
-    }
-    return { level: newLevel, xp: newXp };
+// XP at which `level` starts, and XP at which the next level starts.
+export function xpBounds(level) {
+    return { xpForThis: 5 * (level - 1) * level, xpForNext: 5 * level * (level + 1) };
 }
