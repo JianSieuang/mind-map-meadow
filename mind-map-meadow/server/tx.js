@@ -55,3 +55,17 @@ export async function afterCommit(label, fn) {
         console.error(`❌ [After Commit: ${label}]:`, err.message);
     }
 }
+
+// The only place coins may change. Call inside a transaction holding the stats-row lock.
+// Returns the new balance, or null when a debit can't be afforded.
+export async function changeCoins(client, userId, delta, reason, { clampAtZero = false } = {}) {
+    const { rows } = await client.query("SELECT coins FROM player_stats WHERE user_id = $1 FOR UPDATE", [userId]);
+    const balance = rows[0].coins;
+    const applied = clampAtZero ? Math.max(delta, -balance) : delta;
+    if (balance + applied < 0) return null;
+    if (applied === 0) return balance;
+    const updated = await client.query("UPDATE player_stats SET coins = coins + $1 WHERE user_id = $2 RETURNING coins", [applied, userId]);
+    const balanceAfter = updated.rows[0].coins;
+    await client.query("INSERT INTO coin_ledger (user_id, delta, balance_after, reason) VALUES ($1, $2, $3, $4)", [userId, applied, balanceAfter, reason]);
+    return balanceAfter;
+}

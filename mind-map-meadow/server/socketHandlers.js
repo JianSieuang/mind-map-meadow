@@ -2,7 +2,7 @@ import { pool } from "./db.js";
 import { triggerLlamaBrainDecision } from "./aiBrain.js";
 import { generateTodayInstances } from "./recurringTasks.js";
 import { localDateKey, isRealDate } from "./timezone.js";
-import { withTransaction, lockStatsRow, rollDailyCounters } from "./tx.js";
+import { withTransaction, lockStatsRow, rollDailyCounters, changeCoins } from "./tx.js";
 import { CFG, lineForTask } from "./builderRules.js";
 import { addTownXp, countPooled, fetchBuilderState, insertLineBuilding, touchActivity } from "./builderState.js";
 
@@ -143,12 +143,13 @@ export function registerSocketEvents(io, socket, gameContext) {
 
                 const calorieReward = task.category === "Fitness" ? 350 : 0;
                 const paidIncrement = coins > 0 ? 1 : 0;
+                await changeCoins(client, userId, coins, "task");
                 const updated = await client.query(
                     `UPDATE player_stats
-                     SET coins = coins + $1, calories_burned = calories_burned + $2,
-                         tasks_paid_today = tasks_paid_today + $3, buildings_today = buildings_today + $4
-                     WHERE user_id = $5 RETURNING tasks_paid_today`,
-                    [coins, calorieReward, paidIncrement, generatedToday, userId],
+                     SET calories_burned = calories_burned + $1,
+                         tasks_paid_today = tasks_paid_today + $2, buildings_today = buildings_today + $3
+                     WHERE user_id = $4 RETURNING tasks_paid_today`,
+                    [calorieReward, paidIncrement, generatedToday, userId],
                 );
 
                 return { taskId: task.id, coins, line, building, placedIn, poolCount, poolFull, paidToday: updated.rows[0].tasks_paid_today };

@@ -237,7 +237,7 @@ export function registerBuilderEvents(io, socket, gameContext) {
             if (townLevel(stats.town_xp) < CFG.MERGE_TOWN_LEVEL[level]) throw new BuilderError("TOWN_LEVEL", `That merge needs town level ${CFG.MERGE_TOWN_LEVEL[level]}.`);
 
             const cost = mergeCostFor(level, ownedAbilitiesOf(await fetchWorkerRows(client, userId)));
-            await debitCoins(client, userId, cost);
+            await debitCoins(client, userId, cost, "merge");
 
             await client.query(`UPDATE buildings SET level = $1, asset_key = $2, stored_milli = stored_milli + $3 WHERE id = $4 AND user_id = $5`, [
                 level + 1,
@@ -268,7 +268,7 @@ export function registerBuilderEvents(io, socket, gameContext) {
             if (row.state !== "placed") throw new BuilderError("NOT_PLACED", "That building isn't on the map.");
             const items = await collectRows(client, userId, [row]);
             const total = items.reduce((sum, item) => sum + item.coins, 0);
-            await creditCoins(client, userId, total);
+            await creditCoins(client, userId, total, "collect");
             return () => [["coins_collected", { total, items }]];
         },
     );
@@ -285,7 +285,7 @@ export function registerBuilderEvents(io, socket, gameContext) {
             total += bonus;
             await client.query("UPDATE player_stats SET early_bird_on = $1 WHERE user_id = $2", [today, userId]);
         }
-        await creditCoins(client, userId, total);
+        await creditCoins(client, userId, total, "collect");
 
         const releasedId = await releaseFromPool(client, stats, userId, today);
 
@@ -313,7 +313,7 @@ export function registerBuilderEvents(io, socket, gameContext) {
         const next = ZONES[stats.zone_step + 1];
         if (!next) throw new BuilderError("MAX_ZONE", "You've unlocked all the land there is.");
         if (townLevel(stats.town_xp) < next.townLevel) throw new BuilderError("TOWN_LEVEL", `Expanding needs town level ${next.townLevel}.`);
-        await debitCoins(client, userId, next.cost);
+        await debitCoins(client, userId, next.cost, "expand");
         await client.query("UPDATE player_stats SET zone_step = $1 WHERE user_id = $2", [next.step, userId]);
         return () => [["zone_expanded", { step: next.step, zone: { x: next.x, y: next.y, w: next.w, h: next.h } }]];
     });
@@ -368,7 +368,7 @@ export function registerBuilderEvents(io, socket, gameContext) {
             const footprint = CFG.FOOTPRINT.decoration;
             assertPlacement(await fetchOccupied(client, userId), zoneFor(stats.zone_step), tileX, tileY, footprint);
             const price = CFG.SHOP[assetKey];
-            await debitCoins(client, userId, price);
+            await debitCoins(client, userId, price, "purchase");
             await client.query(
                 `INSERT INTO buildings (type, asset_key, x, y, content, metadata, user_id, kind, state, tile_x, tile_y, footprint, source, accrued_at)
                  VALUES ('Decoration', $1, $2, $3, $4, $5, $6, 'decoration', 'placed', $7, $8, $9, 'purchase', $10)`,

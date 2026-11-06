@@ -1,3 +1,4 @@
+import fs from "node:fs";
 // §5.4 and the money tracker: logs, stalls, savings goals, soft deletes.
 import { check, eq, section, mkUser, connect, init, call, quiet, stats, setStats, counts, row, q1, qa, sleep, addTask } from "../lib/harness.mjs";
 
@@ -147,6 +148,21 @@ export async function run() {
         await init(s);
         for (let i = 0; i < 5; i++) await q1("INSERT INTO savings_goals (user_id,title,target_cents,created_on) VALUES ($1,'x',1000,'2020-01-01') RETURNING id", [u.id]);
         check("cap: a 6th active goal is refused", /up to 5/.test(money(await call(s, "add_savings_goal", { title: "six", targetCents: 1000 })) ?? ""));
+    }
+
+    section("coin ledger: every change is recorded, through one function");
+    {
+        const v = await mkUser("ledger");
+        const c = await connect(v);
+        await init(c);
+        await call(c, "add_transaction", { amountCents: 100, direction: "expense", category: "Food" });
+        const row = await q1("SELECT delta, balance_after, reason FROM coin_ledger WHERE user_id=$1 ORDER BY id DESC LIMIT 1", [v.id]);
+        const coins = (await stats(v)).coins;
+        eq("a money log leaves a ledger row matching the balance", [row.delta, row.reason, row.balance_after], [5, "money_log", coins]);
+        c.close();
+        const dir = new URL("../../server/", import.meta.url);
+        const offenders = fs.readdirSync(dir).filter((f) => f !== "tx.js" && /SET coins/.test(fs.readFileSync(new URL(f, dir), "utf8")));
+        eq("only tx.js writes coins", offenders, []);
     }
 
     section("savings goals: milestones");

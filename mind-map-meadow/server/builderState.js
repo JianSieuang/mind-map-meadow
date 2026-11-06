@@ -1,3 +1,4 @@
+import { changeCoins } from "./tx.js";
 // The Builder Loop's rules engine: settling storage, staffing, placement and the `builder`
 // payload (docs/BUILDER_LOOP_CONTRACT.md §4, §5). Functions taking a `client` expect to run
 // inside a transaction that already holds the user's stats-row lock.
@@ -122,15 +123,15 @@ export async function addTownXp(client, userId, n) {
 // ---------------------------------------------------------------------------
 // Coins
 // ---------------------------------------------------------------------------
-export async function debitCoins(client, userId, amount) {
-    const result = await client.query("UPDATE player_stats SET coins = coins - $1 WHERE user_id = $2 AND coins >= $1 RETURNING coins", [amount, userId]);
-    if (result.rowCount === 0) throw new BuilderError("COINS", "Not enough coins.");
-    return result.rows[0].coins;
+export async function debitCoins(client, userId, amount, reason) {
+    const balance = await changeCoins(client, userId, -amount, reason);
+    if (balance === null) throw new BuilderError("COINS", "Not enough coins.");
+    return balance;
 }
 
-export async function creditCoins(client, userId, amount) {
+export async function creditCoins(client, userId, amount, reason) {
     if (amount <= 0) return;
-    await client.query("UPDATE player_stats SET coins = coins + $1 WHERE user_id = $2", [amount, userId]);
+    await changeCoins(client, userId, amount, reason);
 }
 
 // ---------------------------------------------------------------------------

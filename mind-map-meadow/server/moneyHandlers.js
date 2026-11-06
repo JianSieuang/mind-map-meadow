@@ -1,6 +1,6 @@
 import { pool } from "./db.js";
 import { localDateKey, isRealDate, addDaysToDateKey } from "./timezone.js";
-import { withTransaction, lockStatsRow, rollDailyCounters, afterCommit } from "./tx.js";
+import { withTransaction, lockStatsRow, rollDailyCounters, afterCommit, changeCoins } from "./tx.js";
 import { CFG, MAP_RECT } from "./builderRules.js";
 import { addTownXp, emitBuilderState, fetchBuilderState, fetchOccupied, findFreeSpot, insertLineBuilding, pixelFor, touchActivity, zoneFor } from "./builderState.js";
 
@@ -166,7 +166,7 @@ export function registerMoneyEvents(io, socket) {
                 await touchActivity(client, stats, userId, now);
 
                 const totalCoins = rewards.reduce((sum, r) => sum + r.coins, 0);
-                if (totalCoins > 0) await client.query("UPDATE player_stats SET coins = coins + $1 WHERE user_id = $2", [totalCoins, userId]);
+                for (const reward of rewards) await changeCoins(client, userId, reward.coins, reward.reason.startsWith("Savings milestone") ? "savings_milestone" : "money_log");
 
                 return { rewards, updatedBuilding, stallId: stall ? stall.id : null };
             });
@@ -202,7 +202,7 @@ export function registerMoneyEvents(io, socket) {
                 // Revoke the logging reward so log/delete can't be used to farm coins.
                 // Savings milestone stages (and their coins) are intentionally kept.
                 if (row.reward_coins > 0) {
-                    await client.query("UPDATE player_stats SET coins = GREATEST(coins - $1, 0) WHERE user_id = $2", [row.reward_coins, userId]);
+                    await changeCoins(client, userId, -row.reward_coins, "log_revoked", { clampAtZero: true });
                 }
                 return true;
             });
