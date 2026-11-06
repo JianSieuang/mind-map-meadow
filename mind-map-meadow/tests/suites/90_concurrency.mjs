@@ -65,7 +65,7 @@ export async function run() {
         await sleep(WAIT);
         const row0 = await q1("SELECT stage,status FROM savings_goals WHERE id=$1", [g.id]);
         const st = await stats(u);
-        eq("6 full-target savings at once: all milestones paid exactly once", [row0.stage, row0.status, st.coins], [4, "completed", 160 + 5]);
+        eq("6 full-target savings at once: one milestone paid, exactly once", [row0.stage, row0.status, st.coins], [4, "completed", 40 + 5]);
     }
 
     section("race: collecting");

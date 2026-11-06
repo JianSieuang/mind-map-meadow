@@ -161,6 +161,7 @@ function workerCounts(placedRows, ownedAbilities, zone) {
     for (const row of placedRows) {
         if (row.kind === "line" && row.line === "habit" && isRowInsideZone(row, zone)) beds += CFG.BEDS[row.level];
     }
+    beds = Math.min(beds, CFG.MAX_BEDS);
     const recruiterBonus = ownedAbilities.has("Recruiter") ? 1 : 0;
     return { base: CFG.BASE_WORKERS, beds, recruiterBonus, generic: CFG.BASE_WORKERS + beds + recruiterBonus };
 }
@@ -243,7 +244,9 @@ function computeStaffing(placedRows, workerRows, zone) {
         speedBp += heroBp;
         const cheering = cheerleaderSpots.filter((spot) => spot.id !== row.id && footprintsTouch(spot, row)).length;
         speedBp += Math.min(SPEED.CHEERLEADER_MAX_BP, cheering * SPEED.CHEERLEADER_BP);
-        const capBp = worker && catalogWorker(worker.worker_key)?.ability === "Deep Pockets" ? SPEED.DEEP_POCKETS_CAP_BP : 10000;
+        // Storage grows with speed, so a faster worker pays off even with one collect a day.
+        const baseCapBp = worker && catalogWorker(worker.worker_key)?.ability === "Deep Pockets" ? SPEED.DEEP_POCKETS_CAP_BP : 10000;
+        const capBp = Math.floor((baseCapBp * speedBp) / 10000);
         result.set(row.id, { staffed: true, workerId: worker ? worker.id : null, speedBp, capBp });
     }
     return result;

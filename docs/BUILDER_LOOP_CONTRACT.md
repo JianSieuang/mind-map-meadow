@@ -412,6 +412,8 @@ Frontend and game (manual, in the browser):
 
 ---
 
+> **Later changes (see `docs/PLAN.md` Decisions, item 5):** savings milestones pay once a day, the first habit of the day builds a home, `MAX_BEDS` 20, zone costs 7000/11000/16000, cap scales with speed. `server/builderRules.js` is the source of truth for numbers.
+
 ## 9. Resolved questions
 1. **Workers for players who skip habits:** each town level gives one mystery summon (owner's idea), so nobody gets permanently stuck. UI: a "🎁 Summon" button with a count opens a reveal showing the worker's name, rarity, skill and ability. A Workers panel lists every worker with stars and their building, shows the odds and pity count, and lets you assign by hand; building cards show the worker and speed. Art: 12 roster sprites and a mystery-summon icon (generic Villagers use the approved villager sprite). Paying coins for extra summons is a v1.1 option for the coin sink, and needs its own balance check.
 2. **Manor beds:** 4.

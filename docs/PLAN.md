@@ -51,6 +51,7 @@ Plus **decorations** (bought with coins; boost nearby buildings), **world landma
 1. **NPC workers: required, and a separate scarce resource.** Workers are counted apart from buildings: you might own 10 buildings but have only 2 workers, so only 2 earn. A building only earns while staffed. Workers come from a base pool, houses (Cottage 1 / House 2 / Manor 4 beds) and **mystery summons: each town level up gives one summon that reveals a worker of random level (higher level earns more)**. Summons are never sold for real money and every result is useful. (Product Strategist preferred "buildings just produce" — owner chose workers for the strategy layer; auto-assign by default, with priority/off controls to choose who works.)
 2. **Zone expansion is in v1:** start 12×10 tiles, unlock land with town level + coins.
 3. **Economy:** tasks pay a flat 10 coins (first 5/day) instead of `minutes × 1.5`; **Town Level replaces the player level** (existing levels grandfathered).
+5. **Economy tuning after QA (2026-11-06):** one paid savings milestone a day across all goals (the building still upgrades); the day's first habit builds a home and later ones follow their category; at most 20 house beds count; zone steps 5-7 cost 7000/11000/16000; storage grows with worker speed.
 4. **Burst players get a slow catch-up:** overflow effort turns into progress over the following days you visit — big days still help, consistency stays faster.
 
 ### MVP slice (build first)

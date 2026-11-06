@@ -141,12 +141,12 @@ export async function run() {
         const fin = await mkLine(u, "finance", 1, 4, 3), plain = await mkLine(u, "finance", 1, 6, 3);
         const pen = await addWorker(u, "penny");
         let st = await settle(s);
-        eq("cap is 125%: 3750 vs 3000", [B(st, fin).capMilli, B(st, plain).capMilli], [3750, 3000]);
+        eq("cap is 125% times speed (Penny x1.3): 4875 vs 3000", [B(st, fin).capMilli, B(st, plain).capMilli], [4875, 3000]);
         await advanceHours(30);
         st = await settle(s);
-        eq("30h: storage really reaches 3750", [B(st, fin).storedMilli, B(st, plain).storedMilli], [3750, 3000]);
+        eq("30h: storage really reaches 4875", [B(st, fin).storedMilli, B(st, plain).storedMilli], [4875, 3000]);
         const col = await call(s, "collect", { buildingId: fin });
-        check("collect pays 3 and keeps 750", col.fx.coins_collected.total === 3 && (await stored(fin)) === 750);
+        check("collect pays 4 and keeps 875", col.fx.coins_collected.total === 4 && (await stored(fin)) === 875);
         await db.query("UPDATE buildings SET stored_milli=3750 WHERE id=$1", [fin]);
         const moved = await call(s, "assign_worker", { workerId: pen, buildingId: plain });
         check("moving her away: earned coins above the new cap aren't taken back", B(moved.state, fin).storedMilli === 3750 && B(moved.state, fin).capMilli === 3000, B(moved.state, fin));
@@ -348,7 +348,7 @@ export async function run() {
         await settle(s);
         await advanceHours(200);
         const r = await call(s, "collect_all");
-        check("Early Bird pays nothing while asleep, and isn't burned", r.fx.coins_collected.total === 3 && r.fx.coins_collected.bonus === 0 && (await stats(u)).early_bird_on === null, r.fx.coins_collected);
+        check("Early Bird pays nothing while asleep, and isn't burned", r.fx.coins_collected.total === 4 && r.fx.coins_collected.bonus === 0 && (await stats(u)).early_bird_on === null, r.fx.coins_collected);
         eq("Town Hero and speed bonuses show rate 0 while asleep", B(r.state, a).rateMilliPerHour, 0);
     }
     {

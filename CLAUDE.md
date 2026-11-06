@@ -23,7 +23,7 @@ There is no root `package.json`; all Node tooling lives in `mind-map-meadow/`.
 
 "Mind Map Meadow" is a real-time multiplayer-style life-gamification app: a Stardew-Valley-esque Phaser grid world where completing real tasks (coding/fitness/finance goals) spawns buildings in the meadow, and a local Ollama-driven "AI companion" wanders the map and comments on your progress. Multi-user: each Google account gets its own isolated meadow (own buildings/tasks/stats/AI companion), with an opt-in friend system for read-only visits to another account's meadow. State is synced via Socket.IO, scoped per-user rather than broadcast to every connection.
 
-Goals are managed through a full-screen "Goal Dashboard" (left-nav shell with Goals/Calendar/Daily Tasks pages) reachable via a bottom-middle button, separate from the always-there game HUD (a Profile panel and an Agenda panel, each behind its own top-right toggle icon, plus a toggleable minimap top-left). Coin rewards scale with how long a task is expected to take and whether it's finished by its deadline; completing tasks also grants XP and can level you up.
+Goals are managed through a full-screen "Goal Dashboard" (left-nav shell with Goals/Calendar/Daily Tasks pages) reachable via a bottom-middle button, separate from the always-there game HUD (a Profile panel and an Agenda panel, each behind its own top-right toggle icon, plus a toggleable minimap top-left). Builder Loop (see `docs/BUILDER_LOOP_CONTRACT.md` and `server/builderRules.js`, which supersede older details below): tasks pay flat coins and generate buildings you place, staff and merge; Town Level replaces XP. Work happens on `dev`, which runs in Docker at http://localhost:5173.
 
 ## Commands
 

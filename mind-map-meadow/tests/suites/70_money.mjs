@@ -176,11 +176,11 @@ export async function run() {
         eq("reaching 25% again pays the third log slot only, no second milestone", [(await stats(u)).coins - c3, (await q1("SELECT stage FROM savings_goals WHERE id=$1", [g.id])).stage], [5, 1]);
         const c4 = (await stats(u)).coins;
         r = await save(5000);
-        eq("a jump over two stages pays both", [(await stats(u)).coins - c4, r.fx.building_updated?.metadata?.stage], [80, 3]);
+        eq("a jump over two stages upgrades the building but today's milestone is already paid", [(await stats(u)).coins - c4, r.fx.building_updated?.metadata?.stage], [0, 3]);
         const c5 = (await stats(u)).coins;
         r = await save(999999);
         const done = await q1("SELECT stage,status FROM savings_goals WHERE id=$1", [g.id]);
-        eq("over 100%: stage stops at 4, goal completed, one more milestone", [done.stage, done.status, (await stats(u)).coins - c5], [4, "completed", 40]);
+        eq("over 100%: stage stops at 4, goal completed, no second milestone today", [done.stage, done.status, (await stats(u)).coins - c5], [4, "completed", 0]);
         check("completed goal takes no more savings", /isn't active/.test(money(await save(100)) ?? ""));
         const list = r.all.find(([e]) => e === "refresh_money");
         check("the money state lists saved_cents", list === undefined || list[1].savingsGoals[0].saved_cents >= 10000);

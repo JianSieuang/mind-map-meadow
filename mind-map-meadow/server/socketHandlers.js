@@ -100,7 +100,14 @@ export function registerSocketEvents(io, socket, gameContext) {
                 if (claim.rows.length === 0) return null;
                 const task = claim.rows[0];
 
-                const line = lineForTask(task);
+                // The day's first habit builds a home; the rest follow their category, so a
+                // habit-only player still gets buildings that earn.
+                const isHomeHabit = task.recurring_task_id != null && stats.habit_built_on !== capDay;
+                if (isHomeHabit) {
+                    await client.query("UPDATE player_stats SET habit_built_on = $1 WHERE user_id = $2", [capDay, userId]);
+                    stats.habit_built_on = capDay;
+                }
+                const line = lineForTask(task, isHomeHabit);
                 const coins = stats.tasks_paid_today < CFG.TASK_COINS_PER_DAY ? CFG.TASK_COINS : 0;
                 const content = `Goal Archive: Completed "${task.title}"`;
 

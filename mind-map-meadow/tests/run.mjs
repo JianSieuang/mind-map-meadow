@@ -90,8 +90,11 @@ try {
     adminSql("postgres", `CREATE ROLE ${TEST_ROLE} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '${password}'`);
     adminSql("postgres", `CREATE DATABASE ${TEST_DB} OWNER ${TEST_ROLE}`);
     adminSql(TEST_DB, "CREATE EXTENSION IF NOT EXISTS vector");
-    // No session rows from the real DB: they aren't needed and shouldn't be copied around.
-    inContainer(`pg_dump -U "$POSTGRES_USER" --no-owner --no-privileges --no-comments --exclude-table-data=session -d ${REAL_DB} | psql -q -v ON_ERROR_STOP=1 -U ${TEST_ROLE} -d ${TEST_DB} >/dev/null`);
+    // Pre-Builder-Loop schema built from the migration files, so the suite doesn't depend on the
+    // real DB's state, and no real data is copied around.
+    const dbDir = path.join(appDir, "db");
+    const oldSql = fs.readdirSync(dbDir).filter((f) => /^\d+_.*\.sql$/.test(f) && parseInt(f, 10) < 15).sort().map((f) => fs.readFileSync(path.join(dbDir, f), "utf8")).join(";\n");
+    execFileSync("docker", ["exec", "-i", CONTAINER, "psql", "-q", "-v", "ON_ERROR_STOP=1", "-U", TEST_ROLE, "-d", TEST_DB], { input: oldSql, stdio: ["pipe", "ignore", "pipe"] });
 
     const h = await import(pathToFileURL(path.join(here, "lib/harness.mjs")).href);
     const hooks = {

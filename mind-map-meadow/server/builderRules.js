@@ -21,6 +21,7 @@ export const CFG = {
     SUMMONS_PER_TOWN_LEVEL: 1,
     PITY_AFTER: 9, // pulls without an Epic or better before the next pull is forced to be one
     BEDS: { 1: 1, 2: 2, 3: 4 },
+    MAX_BEDS: 20,
     POOL_MAX: 10,
     TILE_SIZE: 48,
     MAP_W: 70,
@@ -35,9 +36,9 @@ export const ZONES = [
     { step: 2, x: 2, y: 2, w: 20, h: 16, townLevel: 3, cost: 500 },
     { step: 3, x: 2, y: 1, w: 26, h: 20, townLevel: 5, cost: 1000 },
     { step: 4, x: 1, y: 1, w: 34, h: 26, townLevel: 7, cost: 2000 },
-    { step: 5, x: 0, y: 0, w: 44, h: 32, townLevel: 9, cost: 3500 },
-    { step: 6, x: 0, y: 0, w: 56, h: 40, townLevel: 11, cost: 5500 },
-    { step: 7, x: 0, y: 0, w: 70, h: 50, townLevel: 13, cost: 8000 },
+    { step: 5, x: 0, y: 0, w: 44, h: 32, townLevel: 9, cost: 7000 },
+    { step: 6, x: 0, y: 0, w: 56, h: 40, townLevel: 11, cost: 11000 },
+    { step: 7, x: 0, y: 0, w: 70, h: 50, townLevel: 13, cost: 16000 },
 ];
 
 export const MAP_RECT = { x: 0, y: 0, w: CFG.MAP_W, h: CFG.MAP_H };
@@ -53,8 +54,8 @@ export const NAMES = {
 // instances are always the habit line (see lineForTask).
 const CATEGORY_LINE = { Fitness: "fitness", Coding: "coding", Finance: "finance" };
 
-export function lineForTask(task) {
-    if (task.recurring_task_id !== null && task.recurring_task_id !== undefined) return "habit";
+export function lineForTask(task, buildsHome = false) {
+    if (buildsHome) return "habit";
     return Object.hasOwn(CATEGORY_LINE, task.category) ? CATEGORY_LINE[task.category] : "coding";
 }
 
@@ -151,6 +152,7 @@ export const RULES = Object.freeze({
     MERGE_TOWN_LEVEL: CFG.MERGE_TOWN_LEVEL,
     BASE_WORKERS: CFG.BASE_WORKERS,
     BEDS: CFG.BEDS,
+    MAX_BEDS: CFG.MAX_BEDS,
     POOL_MAX: CFG.POOL_MAX,
     SLEEPY_AFTER_HOURS: CFG.SLEEPY_AFTER_HOURS,
     PITY_AFTER: CFG.PITY_AFTER,

@@ -161,6 +161,17 @@ setInterval(() => generateTodayInstances(), 60 * 60 * 1000);
 
 async function initializeApp() {
     try {
+        // After a Docker restart the app can start before Postgres accepts connections.
+        for (let attempt = 1; ; attempt++) {
+            try {
+                await pool.query("SELECT 1");
+                break;
+            } catch (err) {
+                if (attempt >= 30) throw err;
+                console.log(`⏳ [Database] Not ready yet (attempt ${attempt}/30), retrying...`);
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+            }
+        }
         await runMigrations(pool);
         await generateTodayInstances();
         server.listen(PORT, "0.0.0.0", () => {

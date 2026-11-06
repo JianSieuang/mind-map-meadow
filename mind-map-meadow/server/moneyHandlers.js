@@ -131,8 +131,13 @@ export function registerMoneyEvents(io, socket) {
                     const newStage = Math.min(MAX_STAGE, Math.floor((saved * MAX_STAGE) / goal.target_cents));
 
                     if (newStage > goal.stage) {
-                        const gained = newStage - goal.stage;
-                        rewards.push({ coins: gained * MILESTONE_REWARD_COINS, reason: `Savings milestone: ${newStage * 25}%!` });
+                        // One paid milestone a day across all goals, so tiny goals can't farm coins.
+                        // The building still upgrades straight away.
+                        if (stats.savings_paid_on !== capDay) {
+                            rewards.push({ coins: MILESTONE_REWARD_COINS, reason: `Savings milestone: ${newStage * 25}%!` });
+                            await client.query("UPDATE player_stats SET savings_paid_on = $1 WHERE user_id = $2", [capDay, userId]);
+                            stats.savings_paid_on = capDay;
+                        }
 
                         await client.query(`UPDATE savings_goals SET stage = $1, status = $2 WHERE id = $3`, [newStage, newStage >= MAX_STAGE ? "completed" : "active", goal.id]);
 
