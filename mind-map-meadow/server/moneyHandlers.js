@@ -1,4 +1,5 @@
 import { pool } from "./db.js";
+import { recordActivity } from "./activity.js";
 import { localDateKey, isRealDate, addDaysToDateKey } from "./timezone.js";
 import { withTransaction, lockStatsRow, rollDailyCounters, afterCommit, changeCoins } from "./tx.js";
 import { CFG, MAP_RECT } from "./builderRules.js";
@@ -183,6 +184,7 @@ export function registerMoneyEvents(io, socket) {
                 target.emit("builder_state", state);
             });
             await afterCommit("add_transaction refresh", () => emitRefreshMoney(io, userId));
+            recordActivity(userId, "money", timeZone());
         } catch (err) {
             if (err instanceof MoneyValidationError) return fail(err.message);
             console.error("❌ [Add Transaction Error]:", err.message);

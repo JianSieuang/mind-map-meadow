@@ -6,7 +6,8 @@
     "scripts": {
         "build": "vite build",
         "dev": "concurrently \"vite\" \"nodemon -L --watch server.js --ext js server.js\"",
-        "start": "node server.js"
+        "start": "node server.js",
+        "report": "node scripts/activity-report.mjs"
     },
     "dependencies": {
         "@fontsource/pixelify-sans": "^5.3.0",

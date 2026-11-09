@@ -1,4 +1,5 @@
 import { pool } from "./db.js";
+import { recordActivity } from "./activity.js";
 import { triggerLlamaBrainDecision } from "./aiBrain.js";
 import { generateTodayInstances } from "./recurringTasks.js";
 import { localDateKey, isRealDate } from "./timezone.js";
@@ -156,6 +157,7 @@ export function registerSocketEvents(io, socket, gameContext) {
             });
 
             if (!outcome) return;
+            recordActivity(userId, "task", timeZone());
 
             const state = await fetchBuilderState(pool, userId, timeZone());
             const target = io.to(room);

@@ -1,4 +1,5 @@
 import dns from "dns";
+import { recordActivity } from "./server/activity.js";
 dns.setDefaultResultOrder("ipv4first");
 
 import express from "express";
@@ -115,6 +116,7 @@ io.on("connection", (socket) => {
             // Opening the app is a "visit": it can release a catch-up building, and the
             // payload below has to reflect that.
             const builder = await runVisit(io, userId, socket.data.timezone);
+            recordActivity(userId, "open", socket.data.timezone || "UTC");
             const statsResult = await pool.query("SELECT * FROM player_stats WHERE user_id = $1 LIMIT 1", [userId]);
             const tasksResult = await pool.query("SELECT * FROM tasks WHERE user_id = $1 ORDER BY due_date ASC, id ASC", [userId]);
             const recurringTasksResult = await pool.query("SELECT * FROM recurring_tasks WHERE user_id = $1 ORDER BY id ASC", [userId]);

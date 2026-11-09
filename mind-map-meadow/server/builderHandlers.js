@@ -1,5 +1,6 @@
 // Socket events of the Builder Loop (docs/BUILDER_LOOP_CONTRACT.md §5, §6).
 import { pool } from "./db.js";
+import { recordActivity } from "./activity.js";
 import { withTransaction, lockStatsRow, rollDailyCounters, isNewerDay, afterCommit } from "./tx.js";
 import { localDateKey } from "./timezone.js";
 import { townLevel } from "./rewards.js";
@@ -122,6 +123,9 @@ export function registerBuilderEvents(io, socket, gameContext) {
     // Every mutation has the same shape (§5.1): validate, lock, roll counters, settle,
     // mutate, reassign, commit, then fx events followed by the full builder_state.
     // `apply` returns a function that turns the fresh state into [event, payload] pairs.
+    // What each mutation counts as in activity_events (moving a building doesn't count).
+    const ACTIVITY = { place_building: "build", auto_place: "build", merge_buildings: "build", expand_zone: "build", collect: "collect", collect_all: "collect", open_summon: "summon" };
+
     const mutation = (event, validate, apply) => {
         socket.on(event, async (raw) => {
             try {
@@ -146,6 +150,7 @@ export function registerBuilderEvents(io, socket, gameContext) {
                     if (fx) for (const [name, data] of fx(state)) target.emit(name, data);
                     target.emit("builder_state", state);
                 });
+                if (ACTIVITY[event]) recordActivity(userId, ACTIVITY[event], timeZone());
             } catch (err) {
                 sendError(err);
             }
