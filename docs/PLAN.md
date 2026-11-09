@@ -7,102 +7,95 @@ People quit long-term goals (saving money, fitness, learning) because the payoff
 
 ## Principles (non-negotiable)
 1. **Consistency over bursts** — the town grows a little every day you show up; a daily limit stops one-day binges.
-2. **Reward honesty, not frugality** — never scale rewards by money amounts; logging a splurge still counts.
+2. **Reward honesty, not outcomes** — reward the act of logging, never the amount: a splurge still counts, a weigh-in counts whatever it says.
 3. **Never destroy earned progress** — no disasters, streak resets or clawbacks; bad weeks show as rain/sleepy streets and recover with one good action.
 4. **Fast** — logging and collecting take under 5 seconds.
 5. **Our own art** — one style guide, drawn ourselves; reference images are never copied.
-6. **Privacy** — financial free text never goes to an LLM; integration tokens are stored encrypted.
+6. **Privacy** — money notes and health data never go to an LLM or to friends; integration tokens are stored encrypted.
+7. **Never pay-to-win** — summons, workers, coins and speed-ups are never sold for real money.
 
-## Roadmap
-| Phase | Status | Contents |
-|---|---|---|
-| 0. Foundations | ✅ on `dev` | Per-user AI lock, context cleanup, atomic coin spending, double-reward guard, per-user timezone |
-| 1. Money tracking | ✅ on `dev` | Quick-log (💸), Money page (💰), savings goals as construction projects, coin-farming + XSS hardening |
-| **2. Builder Loop v1** | 🟡 designing | See below |
-| 3. Integrations | ⏳ after Builder Loop v1 | Two-way Google Calendar, plugin architecture for ClickUp/Teams/… |
-| 4. AI resident as city advisor | ⏳ | Hybrid: rules for movement, Claude for event reactions + daily reflection with memory |
-| 5. Hosting | ⏳ last (owner, 2026-11-05: localhost until the features are done) | Railway/Render-style host, `staging` + `main` sites, production Docker build. Security items to finish first are listed by `qa-security`. |
+## Where we are
+| Area | Status |
+|---|---|
+| Foundations: per-user data, timezones, atomic coins | ✅ `dev` |
+| Money: Quick log with categories + details, Money page, savings goals as construction sites | ✅ `dev` |
+| Builder Loop v1: buildings, workers, summons, merging, zones, sleepy town, catch-up, guided first day | ✅ `dev` |
+| Hardening: localhost-only ports, DB wait on boot, migration tracking, coin ledger, 1007-check test suite | ✅ `dev` |
+| Accounts: Google sign-in, linked-login table (`user_identities`), friends + read-only visits | ✅ `dev` |
+| UI: lighter task form and Quick log, page addresses (`/tasks`, `/calendar`, `/daily-tasks`, `/money`), right-click = back, normalised movement | ✅ `dev` |
+| Owner's test week | 🟡 now |
 
-## Phase 2 — Builder Loop v1 (decided by owner)
-**Core loop:** do a real task → a **Lv1 building of that task's category** is generated (max **5 per local day**) → **you place it** in your zone → **NPC workers** earn coins over time (capped storage; tap a building or **Collect all**) → **merge** two identical buildings + coins → next level (Lv1→Lv2→Lv3) → expand the **small starting zone** once you reach the **town level AND pay coins**.
+## Next, in order (agreed 2026-11-09 with the Business Manager's notes)
+The goal of this stretch: **get friends in for a 4-week test and be able to measure it.**
 
-**Building lines (4 × 3 levels), tied to task categories:**
+| # | Item | Size | Why now / depends on |
+|---|---|---|---|
+| 1 | **Visit tracking**: `activity_events` (opened, task done, log, collect; by local day) + a weekly report of active days and week-1 → week-4 retention | S | Without it the test can't answer "keep going?". Event type and day only, never content. |
+| 2 | **Account deletion + data export** (JSON of everything; deletion also ends sessions) | M | Trust before strangers join; required before health data and before charging. |
+| 3 | **Shortcut key settings** (plan below) | S | Owner asked. |
+| 4 | **AI resident on Claude** (Haiku reactions with prompt caching, batched daily reflection; per-user call caps, a spend alert, a rule-based fallback; Ollama stays for dev) | M | A hosted app has no Ollama, so the resident would be silent. **Needs the owner's Claude API key.** |
+| 5 | **Test hosting**: `staging` site with HTTPS, secure cookies, CSP, daily DB backups, privacy policy + terms; then an installable web app (PWA) with one optional daily reminder (never guilt) | M–L | Friends can't test localhost; push needs HTTPS. **Owner creates the host account and buys the domain.** |
+| 6 | **Landmarks** (moved up from v1.1): consistent weeks build toward a world landmark | M | A steady player hits their first Lv3 around day 21 and then has no next goal — inside the test window. |
+| 7 | **Fitness tracker** (plan below) | L | After #2, since it stores health data. |
+
+**Then:** weekly town recap card (shareable; the natural paid feature) → the rest of Builder Loop v1.1 (weekly villagers, decoration boosts, coin sinks) → Google Calendar sync → pricing.
+**Parked:** Flutter app (the PWA covers phones), pricing and payments (only if ~40% of testers are still active in week 4).
+**Watch:** the economy is already a lot for a new player (workers, rarities, merging, zones, catch-up, sleepy mode). Simplify where testers get confused before adding systems.
+
+## Builder Loop v1 (built; numbers live in `server/builderRules.js`)
+**Core loop:** do a real task → a **Lv1 building of that task's category** (max **5 per local day**, overflow becomes slow catch-up) → **place it** in your zone → **workers** staff buildings and fill capped coin storage → **Collect** → **merge** two identical buildings + coins → Lv2 → Lv3 → **expand the zone** with town level + coins.
+
 | Category | Lv1 | Lv2 | Lv3 |
 |---|---|---|---|
-| 🏋️ Fitness | Training yard | Gym | Sports arena |
-| 💻 Coding / Learning | Shed workshop | Library | Academy |
+| 🏋️ Fitness | Training Yard | Gym | Sports Arena |
+| 💻 Work & Study | Shed Workshop | Library | Academy |
 | 💰 Finance | Stall | Market | Bank |
-| 🔁 Daily habits | Cottage | House | Manor (houses = villager capacity) |
+| 🔁 Habits (the day's first) | Cottage | House | Manor (beds = workers) |
 
-Plus **decorations** (bought with coins; boost nearby buildings), **world landmarks** (earned by consistent weeks), and the existing **savings construction project**.
+Plus the savings construction site, decorations, and money logs (5 coins, first 3 a day; the day's first builds a Stall).
 
-**Weekly layer:** effort beyond the daily 5 goes into a **weekly effort pool** (capped per day) → recruits a villager (Apprentice / Builder / Master). **Consistency** (≥5 active days in a week) → progress toward a **world landmark**.
+**Decisions (owner):**
+1. **Workers are required and scarce** (2026-11-02): a building only earns while staffed. Workers come from a base 3, house beds (max 20) and **mystery summons** (one per town level; Normal/Rare/Epic/Legendary, pity at 10). Never sold; every result is useful. Design: [`WORKER_DESIGN.md`](WORKER_DESIGN.md).
+2. **Zone expansion in v1**: start 12×10 tiles, 7 steps to the full map.
+3. **Tasks pay a flat 10 coins** (first 5 a day); **Town Level replaces XP** (old levels grandfathered).
+4. **Burst players get a slow catch-up**: big days still help, consistency stays faster.
+5. **Tuning after QA** (2026-11-06): one paid savings milestone a day; the day's first habit builds a home; max 20 beds; zone steps 5–7 cost 7000/11000/16000; storage grows with worker speed.
 
-**Sleepy town:** no real task or money log for ~3 days → production pauses (rain, closed shutters); one action resumes it. Nothing is destroyed.
+Contract: [`BUILDER_LOOP_CONTRACT.md`](BUILDER_LOOP_CONTRACT.md).
 
-### Proposed numbers (from Backend Dev simulation — tune before build)
-- Production (coins/h, needs a worker): Lv1 0.15 · Lv2 0.4 · Lv3 1.0. Storage fills ~20 h.
-- Merge: Lv1→2 = 25 coins · Lv2→3 = 150 coins + town level 5.
-- Zone: plots are 2×2 tiles; start 12×10 tiles, 7 expansion steps up to the full 70×50 map (e.g. TL2 + 200 coins, TL3 + 500, TL5 + 1000 …).
-- Direct coins: first 5 tasks/day pay a flat 10 (replaces the old `minutes × 1.5` formula); money log 5 coins (max 3/day) and the first log of the day generates a Finance Stall.
-- Simulated result: a steady player (4 tasks/day) gets Lv2 on day 2, first expansion week 1, first Lv3 week 3, first landmark week 5. A burst player (15 tasks one day/week) progresses far slower — by design.
+## Planned: shortcut key settings
+- **Settings panel** (gear on the HUD rail) → **Controls**: every action with its key; click one, press the new key; **Reset to defaults**.
+- **Defaults:** WASD/arrows move · `L` Quick log · `T` Tasks · `M` map · `B` buildings · `C` collect all · `Esc`/right-click back · `?` shortcut list.
+- **Rules:** never fire while typing; `Esc`, `Tab` and browser keys (Ctrl+W, Ctrl+R…) can't be rebound; taking a used key offers a swap.
+- **Storage:** per account (`users.settings` JSONB), so it follows you between devices; Phaser movement reads the same bindings.
 
-### Decisions (owner, 2026-11-02)
-1. **NPC workers: required, and a separate scarce resource.** Workers are counted apart from buildings: you might own 10 buildings but have only 2 workers, so only 2 earn. A building only earns while staffed. Workers come from a base pool, houses (Cottage 1 / House 2 / Manor 4 beds) and **mystery summons: each town level up gives one summon that reveals a worker of random level (higher level earns more)**. Summons are never sold for real money and every result is useful. (Product Strategist preferred "buildings just produce" — owner chose workers for the strategy layer; auto-assign by default, with priority/off controls to choose who works.)
-2. **Zone expansion is in v1:** start 12×10 tiles, unlock land with town level + coins.
-3. **Economy:** tasks pay a flat 10 coins (first 5/day) instead of `minutes × 1.5`; **Town Level replaces the player level** (existing levels grandfathered).
-5. **Economy tuning after QA (2026-11-06):** one paid savings milestone a day across all goals (the building still upgrades); the day's first habit builds a home and later ones follow their category; at most 20 house beds count; zone steps 5-7 cost 7000/11000/16000; storage grows with worker speed.
-4. **Burst players get a slow catch-up:** overflow effort turns into progress over the following days you visit — big days still help, consistency stays faster.
+## Planned: fitness tracker
+- **Long plan:** pick a level (just starting / some / active) and a goal (move more, get stronger, endurance) → a 4–8 week plan whose sessions become tasks. Steps up slowly; a missed day moves the plan on, never resets it.
+- **Calories (estimate):** MET × body weight × time, shown as "about", never as diet advice. (`tasks.calories_burned` already exists.)
+- **Body log:** weight, height, optional waist; BMI charted over time with a "rough guide" note; weekly chart of minutes, sessions, kcal.
+- **Rewards:** logging a weigh-in earns coins (capped per week) whatever it says; a weight change is never rewarded or punished.
+- **Privacy:** never to an LLM, never shown to friends, optional, included in export and deletion.
 
-### MVP slice (build first)
-Task → Lv1 building into inventory (5/day) → place (+ "auto-place" option) → workers staff buildings (auto-assign) → buildings fill coin storage → Collect all → merge Lv1→Lv2→Lv3 → zone expansion by town level + coins → production pauses after 3 inactive days → overflow pool with slow catch-up. Existing buildings stay as "heritage" where they are. Deferred to v1.1: weekly villager tiers, world landmarks, decoration boosts.
+## Planned: linking more sign-ins
+`user_identities` holds **provider + provider id → user id**. Accounts are **never joined by matching email** (anyone can make a Facebook account with your Gmail address): a second provider is linked only from inside a signed-in account (Profile → "Link Facebook"), and unlinking the last one is refused. Each new provider needs its own developer app registered by the owner.
 
-## Owner feedback queue (2026-11-09)
-Done on `dev`: task form and Quick log redesigned (equal tiles, recent picks, optional detail as one row, ideas only while the title is empty); diagonal movement normalised; right-click = back out (no browser menu); themed caret; money subcategories (Food → Breakfast/Drinks…, plus Travel, Learning, Family & gifts, Investments); Quick log links straight to a new savings goal; "Coding" shown as **Work & Study**; task ideas per category (beginner fitness guide).
-
-### Planned: shortcut key settings (owner asked: plan first)
-- **Settings panel** (gear icon on the HUD rail) → **Controls**: every action with its key; click one, press the new key; **Reset to defaults**.
-- **Defaults:** WASD/arrows move · `L` Quick log · `T` Tasks · `M` map · `B` buildings · `C` collect all · `Esc`/right-click back out · `?` shortcut list.
-- **Rules:** shortcuts never fire while typing in a field; `Esc`, `Tab` and browser keys (Ctrl+W, Ctrl+R…) can't be rebound; binding a key that's taken asks to swap.
-- **Storage:** per account (`users.settings` JSONB), so it follows you to another device; Phaser movement reads the same bindings.
-- Later: a fuller fitness guide (a weekly starter plan by level) if the ideas list proves useful.
-
-### Planned: fitness tracker (owner, 2026-11-09)
-- **Long plan:** pick a level (just starting / some / active) and a goal (move more, get stronger, endurance) → a 4–8 week plan whose daily sessions become tasks. Plans step up slowly; any missed day just moves the plan on, never resets it.
-- **Calories (estimate):** each workout shows kcal burned from MET × body weight × time (e.g. brisk walk MET 3.5). Shown as "about", never as diet advice.
-- **Body log:** weight, height, optional waist; BMI computed and charted over time, with a note that BMI is a rough guide. Fitness page gets a weekly chart: minutes moved, sessions, kcal.
-- **Rewards follow the same rule as money: reward logging, never the number.** Logging a weigh-in earns coins (capped per week), whatever it says; a weight change itself is never rewarded or punished.
-- **Privacy:** health data is as private as money: never sent to an LLM, never shown to friends, optional, and deletable with the account.
-
-## Art direction (owner: "all buildings need to be redone")
-Full rules: [`docs/ART_STYLE_GUIDE.md`](ART_STYLE_GUIDE.md).
-- **Projection:** ¾ top-down (Stardew / Pokémon style) — front face + top/roof, no side walls, light from top-left.
-- **Outline:** one 1 px `#2b1e1a` outline on everything (white sticker outline retired). One 32-colour master palette.
-
-### Size ratio (building ↔ player) — ⚠️ owner to check against the lineup image
-| Thing | Footprint | Sprite size | Ratio to player |
-|---|---|---|---|
-| Ground tile | 1×1 | 48×48 | — |
-| **Player / AI / villagers** | — | **24×32** | 1 |
-| Building Lv1 | 2×2 tiles | 96×112 | building is **4× player width** |
-| Building Lv2 (1 storey) | 2×2 | 96×136 | storey 45 px ≈ **1.4× player height**; door 18×34 fits a player |
-| Building Lv3 | 2×2 | 96×168 | ≈ 5× player height incl. topper |
-| Decoration | 1×1 | 48×48–64 | 2× player width |
-| Landmark | 3×3+ | 144 × (144+H) | 6× player width |
-
-Today the player is **32×48 next to 48×48 buildings** — a person almost as tall as a building. The new ratio makes a building read as a building.
-
-**Redraw list:** all 11 existing sprites (House, SuperMarket, CozyBench, GardenFountain, Savings Stage0–4, Player, AiCompanion) + ~24 character walk frames + the 12 new building sprites + UI/effects (~45 sprites total). Code change: 2×2 building footprint/physics, 24×32 character bodies.
-
-## Phase 3 — Integrations (decided)
+## Integrations (later)
 - **Two-way Google Calendar first.** The app writes only to its **own "Mind Map Meadow" calendar** and reads your other calendars (never edits your real events).
-- **Creator owns the item** (app-made → app wins; Google-made → Google wins). Change stamps prevent ping-pong. Deletes never remove earned buildings.
-- **Imported events are suggestions** — you mark them done yourself; nothing auto-completes.
-- **Plugin architecture:** `integrations` table (one row per connected account, encrypted tokens) + one shared `external_items` table for every provider; each plugin implements fetch / normalize / push. ClickUp, Teams, etc. are added as new plugins with no new tables.
-- Google "testing mode" works for the owner now; public launch needs Google's OAuth verification.
+- **Creator owns the item**; change stamps prevent ping-pong; deletes never remove earned buildings.
+- **Imported events are suggestions** — you mark them done yourself.
+- **Plugin architecture:** `integrations` (one row per connected account, encrypted tokens) + one shared `external_items` table; each plugin implements fetch / normalize / push.
+- Calendar scopes need Google verification (verified domain, privacy policy, demo video, about a week); testing mode caps at 100 users.
+
+## Business (from [`BUSINESS_NOTES.md`](BUSINESS_NOTES.md))
+- Cost: ~$6/month for the owner alone, ~$1 per user at scale; Claude calls are the part that grows, hence caps and a spend alert before friends.
+- If we charge: free game + optional "Meadow Plus" (~$29.99/yr: AI reflection and memory, calendar sync, cosmetics). Cosmetics carry no gameplay effect.
+- Before charging: privacy policy, terms, refunds, deletion/export, a merchant of record for sales tax, daily backups.
+
+## Art direction
+Full rules: [`ART_STYLE_GUIDE.md`](ART_STYLE_GUIDE.md). ¾ top-down, light from top-left, one 1 px `#2b1e1a` outline, one master palette. Sizes: tile 48×48 · characters 24×32 · buildings 2×2 tiles (96 wide; 112 / 136 / 168 tall by level) · decorations 1×1 · landmarks 3×3+. All sprites redrawn to this ratio (owner approved).
 
 ## How the team works
-- **Project Lead (Claude):** plans, writes the shared contract, splits work so nobody edits the same files, reviews, builds, commits.
-- **Team** (`.claude/agents/`): `backend-dev` (server, db), `frontend-dev` (React UI), `art-game-dev` (pixel art + Phaser), `qa-reviewer` (read-only review before every commit), `product-strategist` (read-only devil's advocate).
-- **Flow per feature:** plan + contract → devs build in parallel → QA review → lead verifies (build, checks) → commit on `feature/<name>` → merge to `dev`. Major features also get a QA run that tests every feature for real, then an independent review by Fable, before merging.
-- **Branches:** `feature/*` → `dev` (builds) → `staging` (tested in the browser) → `main` (live; owner's go-ahead only).
+- **Project Lead (Claude):** plans, writes the contract, splits work so nobody edits the same files, reviews, builds, commits. Small work is done inline to save tokens; agents for larger pieces.
+- **Team** (`.claude/agents/`): `backend-dev`, `frontend-dev`, `art-game-dev`; reviewers `qa-reviewer`, `qa-security`, `qa-economy`, `ui-ux-reviewer`; testers `qa-api-tester`, `qa-browser-tester`; advisor `product-strategist`. The Business Manager works in the cloud and answers on `TEAM_BOARD.md` / `BUSINESS_NOTES.md`.
+- **Flow:** plan → build → `node tests/run.mjs` + `npm run build` → commit and push to **`dev`** (owner, 2026-11-06: work directly on `dev`; local Docker at http://localhost:5173 runs `dev`). Major features also get the QA agents and an independent review.
+- **Branches:** `dev` → `staging` (browser-tested) → `main` (live; owner's go-ahead only).
