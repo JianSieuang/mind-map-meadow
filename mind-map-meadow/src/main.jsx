@@ -11,3 +11,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         </GoogleOAuthProvider>
     </React.StrictMode>,
 );
+
+// Installable app (and, later, the daily reminder). Failure just means no install button.
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+}
