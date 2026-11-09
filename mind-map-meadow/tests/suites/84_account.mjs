@@ -18,6 +18,15 @@ export async function run() {
     await call(so, "complete_task", await addTask(other, "Coding", { title: "BEN TASK" }));
     await sleep(200);
 
+    section("security headers");
+    {
+        const h = (await http("/auth/me")).headers;
+        check("CSP set, no framing, no plugins", /frame-ancestors 'none'/.test(h.get("content-security-policy") || "") && /object-src 'none'/.test(h.get("content-security-policy") || ""), h.get("content-security-policy"));
+        eq("nosniff, referrer policy, no x-powered-by", [h.get("x-content-type-options"), h.get("referrer-policy"), h.get("x-powered-by")], ["nosniff", "strict-origin-when-cross-origin", null]);
+        const big = await http("/account/delete", { method: "POST", cookie: u.cookie, body: { confirm: "DELETE", pad: "x".repeat(40000) } });
+        eq("oversized JSON bodies are refused before any handler", big.status, 413);
+    }
+
     section("account export");
     {
         eq("signed out: 401", (await http("/account/export")).status, 401);

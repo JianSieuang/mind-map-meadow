@@ -54,6 +54,23 @@ services:
             - "127.0.0.1:${POSTGRES_PORT}:5432"
         restart: unless-stopped
 
+    # One compressed dump a day into ./backups/daily (gitignored), newest 14 kept. ops/backup.sh
+    db-backup:
+        image: pgvector/pgvector:pg16
+        container_name: meadow-db-backup
+        environment:
+            PGHOST: postgres-db
+            PGUSER: ${POSTGRES_USER}
+            PGPASSWORD: ${POSTGRES_PASSWORD}
+            PGDATABASE: ${POSTGRES_DB}
+        volumes:
+            - ./backups:/backups
+            - ./ops/backup.sh:/backup.sh:ro
+        entrypoint: ["/bin/sh", "/backup.sh"]
+        restart: unless-stopped
+        depends_on:
+            - postgres-db
+
     db-viewer:
         image: adminer:latest
         container_name: meadow-db-viewer

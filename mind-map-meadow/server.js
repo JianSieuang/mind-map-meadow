@@ -21,6 +21,7 @@ import { sessionMiddleware, sessionRoomFor } from "./server/sessionMiddleware.js
 import { allowRequest, attachRateLimit } from "./server/socketGuards.js";
 import authRouter from "./server/auth.js";
 import accountRouter from "./server/accountRoutes.js";
+import { securityHeaders } from "./server/securityHeaders.js";
 import { isValidTimeZone } from "./server/timezone.js";
 
 const app = express();
@@ -36,7 +37,9 @@ app.set("io", io); // auth.js drops a session's sockets when that session ends
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-app.use(express.json());
+app.disable("x-powered-by");
+app.use(securityHeaders);
+app.use(express.json({ limit: "32kb" }));
 app.use(sessionMiddleware);
 app.use("/auth", authRouter);
 app.use("/account", accountRouter);
