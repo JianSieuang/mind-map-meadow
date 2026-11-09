@@ -14,13 +14,6 @@ export const MINIMAP_CONFIG = {
     FRAME_TOP: 72, // until App has measured the sign (scene.placeMinimap)
 };
 
-export const KEY_CONTROLS = {
-    UP: "W",
-    DOWN: "S",
-    LEFT: "A",
-    RIGHT: "D",
-};
-
 // Render order. Buildings, the player and the AI sort by their ground Y (0..HEIGHT), so anything
 // that must sit above or below all of them lives outside that range.
 export const DEPTH = {

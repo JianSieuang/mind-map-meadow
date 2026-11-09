@@ -1,5 +1,7 @@
 import dns from "dns";
 import { recordActivity } from "./server/activity.js";
+import { bindingsFrom } from "./server/keybindings.js";
+import { registerSettingsEvents } from "./server/settingsHandlers.js";
 dns.setDefaultResultOrder("ipv4first");
 
 import express from "express";
@@ -123,6 +125,7 @@ io.on("connection", (socket) => {
             const tasksResult = await pool.query("SELECT * FROM tasks WHERE user_id = $1 ORDER BY due_date ASC, id ASC", [userId]);
             const recurringTasksResult = await pool.query("SELECT * FROM recurring_tasks WHERE user_id = $1 ORDER BY id ASC", [userId]);
             const money = await fetchMoneyState(pool, userId);
+            const settingsResult = await pool.query("SELECT settings FROM users WHERE id = $1", [userId]);
 
             socket.emit("init_state", {
                 player: gameContext.playerPos,
@@ -134,6 +137,7 @@ io.on("connection", (socket) => {
                 transactions: money.transactions,
                 savingsGoals: money.savingsGoals,
                 builder,
+                settings: { keybindings: bindingsFrom(settingsResult.rows[0]?.settings) },
             });
             socket.emit("ai_thought_broadcast", { thought: gameContext.aiCurrentThought });
         } catch (err) {
@@ -144,6 +148,7 @@ io.on("connection", (socket) => {
     registerSocketEvents(io, socket, gameContext);
     registerFriendEvents(io, socket);
     registerMoneyEvents(io, socket);
+    registerSettingsEvents(io, socket);
     registerBuilderEvents(io, socket, gameContext);
 
     // Drop the user's in-memory context once their last tab/device disconnects, so

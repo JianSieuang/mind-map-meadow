@@ -1,5 +1,6 @@
 import Phaser from "phaser";
-import { MAP_CONFIG, KEY_CONTROLS, ASSET_REGISTRY, CHARACTER_ASSETS, UI_ASSETS, DEPTH } from "./config";
+import { DEFAULT_BINDINGS, keyCodeFor } from "../../server/keybindings.js";
+import { MAP_CONFIG, ASSET_REGISTRY, CHARACTER_ASSETS, UI_ASSETS, DEPTH } from "./config";
 import { renderBuilding, updateBuilding, destroyBuildingSprite, refreshAttachments, updateAttachmentsPerFrame, normalizeBuilding, refreshTint } from "./buildings";
 import { createTextLayer, removeTextLayer } from "./textLayer";
 import { BOTTOM_MARGIN, TOP_MARGIN, createGround, createPlacementGrid, createZoneOverlay, drawZone } from "./ground";
@@ -30,6 +31,11 @@ import {
     updateDrag,
     updatePlacement,
 } from "./placement";
+
+// Focus in a text field: keys are for typing, not walking.
+function isTypingTarget(el) {
+    return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+}
 
 export class MeadowScene extends Phaser.Scene {
     constructor(socket, onBuildingInspect, onMapClick, onPlacementEnd) {
@@ -134,12 +140,11 @@ export class MeadowScene extends Phaser.Scene {
         scene.gridHighlight.setStrokeStyle(2, 0xffd65a).setVisible(false).setDepth(DEPTH.ZONE_LINE);
         scene.minimapCamera.ignore(scene.gridHighlight);
 
-        window.inputKeys = scene.input.keyboard.addKeys({
-            up: Phaser.Input.Keyboard.KeyCodes[KEY_CONTROLS.UP],
-            down: Phaser.Input.Keyboard.KeyCodes[KEY_CONTROLS.DOWN],
-            left: Phaser.Input.Keyboard.KeyCodes[KEY_CONTROLS.LEFT],
-            right: Phaser.Input.Keyboard.KeyCodes[KEY_CONTROLS.RIGHT],
-        });
+        // Walking keys come from the player's shortcut settings (scene.setMoveBindings); the
+        // arrows always walk too. No key capture: a letter typed into a text field stays a letter.
+        const KC = Phaser.Input.Keyboard.KeyCodes;
+        scene.arrowKeys = scene.input.keyboard.addKeys({ up: KC.UP, down: KC.DOWN, left: KC.LEFT, right: KC.RIGHT }, false);
+        scene.setMoveBindings(DEFAULT_BINDINGS);
 
         // 24x32 characters: the collision body is just the feet, so the head can overlap what's behind.
         window.player = scene.add.image(400, 300, "player_character");
@@ -444,8 +449,10 @@ export class MeadowScene extends Phaser.Scene {
         const keyboardActive = this.input.keyboard.isActive();
         if (keyboardActive) {
             // Same speed in every direction: a diagonal is normalised, not √2 faster.
-            const dx = (window.inputKeys.right.isDown ? 1 : 0) - (window.inputKeys.left.isDown ? 1 : 0);
-            const dy = (window.inputKeys.down.isDown ? 1 : 0) - (window.inputKeys.up.isDown ? 1 : 0);
+            const typing = isTypingTarget(document.activeElement);
+            const down = (dir) => !typing && (window.inputKeys[dir].isDown || this.arrowKeys[dir].isDown);
+            const dx = (down("right") ? 1 : 0) - (down("left") ? 1 : 0);
+            const dy = (down("down") ? 1 : 0) - (down("up") ? 1 : 0);
             const len = Math.hypot(dx, dy);
             if (len > 0) {
                 window.player.body.setVelocity((dx / len) * MAP_CONFIG.PLAYER_SPEED, (dy / len) * MAP_CONFIG.PLAYER_SPEED);
@@ -527,6 +534,15 @@ export class MeadowScene extends Phaser.Scene {
     beginPlacement(options) {
         if (!this.isReady) return false;
         return beginPlacement(this, options);
+    }
+
+    // { moveUp, moveDown, moveLeft, moveRight, ... } as KeyboardEvent.code values.
+    setMoveBindings(bindings) {
+        if (!this.input?.keyboard) return;
+        const old = window.inputKeys;
+        if (old) Object.values(old).forEach((key) => this.input.keyboard.removeKey(key, true, false));
+        const code = (id) => keyCodeFor(bindings[id]) ?? keyCodeFor(DEFAULT_BINDINGS[id]);
+        window.inputKeys = this.input.keyboard.addKeys({ up: code("moveUp"), down: code("moveDown"), left: code("moveLeft"), right: code("moveRight") }, false);
     }
 
     cancelPlacement() {

@@ -27,6 +27,8 @@ import { browserTimeZone } from "./utils/dates";
 import { taskRewardPreview } from "./utils/rewards";
 import { buildingName, builderErrorMessage, collectableCoins, decorationName, lineBuildingName } from "./utils/builder";
 import { advanceFirstDay, coachMessage, finishFirstDay, hudReveal, markTipSeen } from "./utils/tutorial";
+import ShortcutsModal from "./components/ShortcutsModal";
+import { DEFAULT_BINDINGS } from "../server/keybindings.js";
 import { pageFromPath, pathForPage, pathForVisit, visitIdFromPath } from "./utils/route";
 
 // One socket for the page's lifetime. Under Vite HMR this module re-executes; reuse the
@@ -116,6 +118,8 @@ export default function App() {
     const [aiThought, setAiThought] = useState(null);
     const [levelUp, setLevelUp] = useState(null); // null | { level }
     const [connection, setConnection] = useState("online"); // online | offline | lost
+    const [keybindings, setKeybindings] = useState(DEFAULT_BINDINGS);
+    const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
     const [toasts, setToasts] = useState([]); // [{ id, kind, text, detail }]
     const toastSeq = useRef(0);
@@ -279,6 +283,7 @@ export default function App() {
             if (state.transactions) setTransactions(state.transactions);
             if (state.savingsGoals) setSavingsGoals(state.savingsGoals);
             if (state.builder) applyBuilder(state.builder);
+            if (state.settings?.keybindings) setKeybindings(state.settings.keybindings);
             // Opened (or reconnected) on /visit/<id>: show that friend's meadow, not ours.
             const friendId = visitIdFromPath(window.location.pathname);
             if (friendId !== null) socket.emit("visit_friend_map", { friendId });
@@ -390,6 +395,13 @@ export default function App() {
         };
 
         const onMoneyError = (message) => {
+            showMoneyToast({ kind: "error", text: "Hmm", detail: String(message) });
+        };
+
+        const onSettings = (settings) => {
+            if (settings?.keybindings) setKeybindings(settings.keybindings);
+        };
+        const onSettingsError = (message) => {
             showMoneyToast({ kind: "error", text: "Hmm", detail: String(message) });
         };
 
@@ -510,6 +522,8 @@ export default function App() {
             refresh_money: onRefreshMoney,
             money_reward: onMoneyReward,
             money_error: onMoneyError,
+            settings: onSettings,
+            settings_error: onSettingsError,
             refresh_data: onRefreshData,
             refresh_recurring_tasks: onRefreshRecurringTasks,
             ai_thought_broadcast: onAiThought,
@@ -602,7 +616,7 @@ export default function App() {
 
     // Freeze input controls when an overlay or a panel with inputs is open (typing "w" in a
     // search box must not walk the player, and global capture would swallow the letter)
-    const keyboardFrozen = isModalOpen || isDashboardOpen || isQuickAddOpen || activeHudPanel === "friends" || activeHudPanel === "workers" || !!summon || connection !== "online";
+    const keyboardFrozen = isModalOpen || isDashboardOpen || isQuickAddOpen || isShortcutsOpen || activeHudPanel === "friends" || activeHudPanel === "workers" || !!summon || connection !== "online";
     useEffect(() => {
         if (!phaserRef.current) return;
         const scene = phaserRef.current.scene.scenes[0];
@@ -842,6 +856,51 @@ export default function App() {
         saveTutorial(builder?.tutorial?.step ?? 0, true);
     };
 
+    // Saved per account; every signed-in tab gets the "settings" echo. Shown at once here.
+    const handleChangeKeybindings = useCallback((next) => {
+        setKeybindings(next);
+        emitAction("save_keybindings", { keybindings: next });
+    }, []);
+
+    // The scene walks with the same keys.
+    useEffect(() => {
+        let retry = null;
+        const apply = () => {
+            const scene = getScene();
+            if (!scene?.setMoveBindings || !scene.sys?.isActive?.()) return void (retry = setTimeout(apply, 200));
+            scene.setMoveBindings(keybindings);
+        };
+        apply();
+        return () => clearTimeout(retry);
+    }, [keybindings, user]);
+
+    // App shortcuts (Quick log, Tasks, map ...). Never while typing, with Ctrl/Alt/Cmd held, or
+    // with a form or reveal on top. The latest handler sits in a ref so the listener is added once.
+    const shortcutRef = useRef(null);
+    shortcutRef.current = (e) => {
+        if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+        const el = document.activeElement;
+        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+        if (isModalOpen || isQuickAddOpen || isShortcutsOpen || summon || placing) return;
+        const action = Object.keys(keybindings).find((id) => keybindings[id] === e.code);
+        if (!action || action.startsWith("move")) return;
+        const inMeadow = !isDashboardOpen && !visitingFriend;
+        if (action === "quickLog" && !visitingFriend) setIsQuickAddOpen(true);
+        else if (action === "tasks" && !visitingFriend) isDashboardOpen ? navigate(null) : openDashboard();
+        else if (action === "map" && !isDashboardOpen) handleToggleMinimap();
+        else if (action === "buildings" && inMeadow && builder) togglePanel("inventory");
+        else if (action === "collect" && inMeadow && builder) handleCollectAll();
+        else if (action === "help") setIsShortcutsOpen(true);
+        else return;
+        e.preventDefault();
+    };
+    useEffect(() => {
+        if (!user) return undefined;
+        const onKeyDown = (e) => shortcutRef.current?.(e);
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [user]);
+
     const handleReplayGuide = () => {
         const counts = builder?.today_counts;
         tutorialBaseline.current = { tasksPaid: counts?.tasksPaid ?? 0, logsPaid: counts?.logsPaid ?? 0 };
@@ -959,7 +1018,7 @@ export default function App() {
                         onSummon={handleOpenSummon}
                     />
                 )}
-                {activeHudPanel === "profile" && <ProfilePanel stats={stats} builder={builder} aiThought={aiThought} user={user} onLogout={handleLogout} onReplayGuide={handleReplayGuide} />}
+                {activeHudPanel === "profile" && <ProfilePanel stats={stats} builder={builder} aiThought={aiThought} user={user} onLogout={handleLogout} onReplayGuide={handleReplayGuide} onOpenShortcuts={() => setIsShortcutsOpen(true)} />}
                 {activeHudPanel === "agenda" && <AgendaPanel tasks={tasks} onCompleteTask={handleCompleteTask} />}
                 {activeHudPanel === "inventory" && builder && (
                     <InventoryPanel
@@ -1065,6 +1124,8 @@ export default function App() {
 
             {/* Money quick-log (rendered above the dashboard so it also works from the Money page) */}
             <QuickAddMoney isOpen={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} onSubmit={handleAddTransaction} savingsGoals={savingsGoals} transactions={transactions} onStartSavingsGoal={handleStartSavingsGoal} />
+
+            {isShortcutsOpen && <ShortcutsModal bindings={keybindings} onChange={handleChangeKeybindings} onClose={() => setIsShortcutsOpen(false)} />}
 
             {/* Mystery summon reveal */}
             {summon && <SummonReveal key={summon.round} result={summon.result} onRequest={handleRequestSummon} onClose={handleCloseSummon} onOpenAnother={handleOpenSummon} />}

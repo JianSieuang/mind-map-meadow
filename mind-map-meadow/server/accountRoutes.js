@@ -25,7 +25,7 @@ function requireOwnOrigin(req, res, next) {
 }
 
 export async function buildExport(db, userId) {
-    const profile = await db.query("SELECT id, email, name, avatar_url, timezone, created_at FROM users WHERE id = $1", [userId]);
+    const profile = await db.query("SELECT id, email, name, avatar_url, timezone, settings, created_at FROM users WHERE id = $1", [userId]);
     const data = {
         exported_at: new Date().toISOString(),
         format: "mind-map-meadow-export/1",

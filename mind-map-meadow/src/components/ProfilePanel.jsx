@@ -67,7 +67,7 @@ function YourData() {
     );
 }
 
-export default function ProfilePanel({ stats, builder, aiThought, user, onLogout, onReplayGuide }) {
+export default function ProfilePanel({ stats, builder, aiThought, user, onLogout, onReplayGuide, onOpenShortcuts }) {
     const progress = townProgress(builder?.town);
     const coins = builder?.coins ?? stats.coins ?? 0;
     const counts = builder?.today_counts;
@@ -123,13 +123,18 @@ export default function ProfilePanel({ stats, builder, aiThought, user, onLogout
                     </div>
                 )}
                 <div className="flex items-center justify-between">
-                    {builder?.tutorial ? (
-                        <button onClick={onReplayGuide} className={LINK_BTN_CLASS}>
-                            Replay guide
-                        </button>
-                    ) : (
-                        <span />
-                    )}
+                    <div className="flex items-center gap-3">
+                        {builder?.tutorial && (
+                            <button onClick={onReplayGuide} className={LINK_BTN_CLASS}>
+                                Replay guide
+                            </button>
+                        )}
+                        {onOpenShortcuts && (
+                            <button onClick={onOpenShortcuts} className={`${LINK_BTN_CLASS} hidden lg:inline-flex`}>
+                                Shortcuts
+                            </button>
+                        )}
+                    </div>
                     {user && (
                         <button onClick={onLogout} className={LINK_BTN_CLASS}>
                             Log out
