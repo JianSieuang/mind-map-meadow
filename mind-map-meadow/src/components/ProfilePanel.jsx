@@ -37,9 +37,14 @@ function YourData() {
     return (
         <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between">
-                <a href="/account/export" download className={LINK_BTN_CLASS}>
-                    Download my data
-                </a>
+                <span className="flex items-center gap-3">
+                    <a href="/account/export" download className={LINK_BTN_CLASS}>
+                        Download my data
+                    </a>
+                    <a href="/privacy.html" target="_blank" rel="noopener" className={LINK_BTN_CLASS}>
+                        Privacy
+                    </a>
+                </span>
                 {!confirming && (
                     <button onClick={() => setConfirming(true)} className={`${LINK_BTN_CLASS} !text-[#9c2f2b]`}>
                         Delete account…

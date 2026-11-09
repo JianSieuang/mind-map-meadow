@@ -23,6 +23,7 @@ People quit long-term goals (saving money, fitness, learning) because the payoff
 | Hardening: localhost-only ports, DB wait on boot, migration tracking, coin ledger, 1007-check test suite | ✅ `dev` |
 | Accounts: Google sign-in, linked-login table (`user_identities`), friends + read-only visits | ✅ `dev` |
 | UI: lighter task form and Quick log, page addresses (`/tasks`, `/calendar`, `/daily-tasks`, `/money`), right-click = back, normalised movement | ✅ `dev` |
+| Visit tracking (`activity_events`, `npm run report`), account export + deletion, shortcut keys, security headers, daily DB backups, installable app (PWA), draft privacy + terms pages | ✅ `dev` (2026-11-09) |
 | Owner's test week | 🟡 now |
 
 ## Next, in order (agreed 2026-11-09 with the Business Manager's notes)
@@ -30,14 +31,15 @@ The goal of this stretch: **get friends in for a 4-week test and be able to meas
 
 | # | Item | Size | Why now / depends on |
 |---|---|---|---|
-| 1 | **Visit tracking**: `activity_events` (opened, task done, log, collect; by local day) + a weekly report of active days and week-1 → week-4 retention | S | Without it the test can't answer "keep going?". Event type and day only, never content. |
-| 2 | **Account deletion + data export** (JSON of everything; deletion also ends sessions) | M | Trust before strangers join; required before health data and before charging. |
-| 3 | **Shortcut key settings** (plan below) | S | Owner asked. |
+| 1 ✅ | **Visit tracking**: `activity_events` (opened, task done, log, collect; by local day) + a weekly report of active days and week-1 → week-4 retention | S | Without it the test can't answer "keep going?". Event type and day only, never content. |
+| 2 ✅ | **Account deletion + data export** (JSON of everything; deletion also ends sessions) | M | Trust before strangers join; required before health data and before charging. |
+| 3 ✅ | **Shortcut key settings** (plan below) | S | Owner asked. |
 | 4 | **AI resident on Claude** (Haiku reactions with prompt caching, batched daily reflection; per-user call caps, a spend alert, a rule-based fallback; Ollama stays for dev) | M | A hosted app has no Ollama, so the resident would be silent. **Needs the owner's Claude API key.** |
-| 5 | **Test hosting**: `staging` site with HTTPS, secure cookies, CSP, daily DB backups, privacy policy + terms; then an installable web app (PWA) with one optional daily reminder (never guilt) | M–L | Friends can't test localhost; push needs HTTPS. **Owner creates the host account and buys the domain.** |
+| 5 🟡 | **Test hosting** (done: headers/CSP, backups, PWA, draft legal pages; left: host + domain, push reminder, legal review): `staging` site with HTTPS, secure cookies, CSP, daily DB backups, privacy policy + terms; then an installable web app (PWA) with one optional daily reminder (never guilt) | M–L | Friends can't test localhost; push needs HTTPS. **Owner creates the host account and buys the domain.** |
 | 6 | **Landmarks** (moved up from v1.1): consistent weeks build toward a world landmark | M | A steady player hits their first Lv3 around day 21 and then has no next goal — inside the test window. |
 | 7 | **Fitness tracker** (plan below) | L | After #2, since it stores health data. |
 
+**Also asked (owner, 2026-11-09):** more sign-in options than Google (built on `user_identities`; owner picks which: email + password, Facebook, Apple, GitHub …).
 **Then:** weekly town recap card (shareable; the natural paid feature) → the rest of Builder Loop v1.1 (weekly villagers, decoration boosts, coin sinks) → Google Calendar sync → pricing.
 **Parked:** Flutter app (the PWA covers phones), pricing and payments (only if ~40% of testers are still active in week 4).
 **Watch:** the economy is already a lot for a new player (workers, rarities, merging, zones, catch-up, sleepy mode). Simplify where testers get confused before adding systems.

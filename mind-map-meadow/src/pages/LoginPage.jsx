@@ -73,6 +73,18 @@ export default function LoginPage({ onLogin, error }) {
                 <GoogleLogin onSuccess={onLogin} onError={() => onLogin(null, "Google sign-in failed. Please try again.")} theme="outline" shape="rectangular" />
 
                 {error && <p className="text-xs font-semibold text-[#9c2f2b] text-center">{error}</p>}
+
+                <p className="text-xs text-[#6b3f22] text-center">
+                    By signing in you agree to the{" "}
+                    <a href="/terms.html" className="underline underline-offset-2 hover:text-[#2b1e1a]">
+                        terms
+                    </a>{" "}
+                    and{" "}
+                    <a href="/privacy.html" className="underline underline-offset-2 hover:text-[#2b1e1a]">
+                        privacy page
+                    </a>
+                    .
+                </p>
             </div>
         </div>
     );
