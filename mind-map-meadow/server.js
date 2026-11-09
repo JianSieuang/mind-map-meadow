@@ -37,9 +37,9 @@ app.use(express.json());
 app.use(sessionMiddleware);
 app.use("/auth", authRouter);
 app.use(express.static(path.join(__dirname, "dist")));
-// The dashboard pages are addresses of the single-page app (see src/utils/route.js).
-const DASHBOARD_PATHS = ["/tasks", "/calendar", "/daily-tasks", "/money"];
-app.get(DASHBOARD_PATHS, (req, res) => res.sendFile(path.join(__dirname, "dist", "index.html")));
+// Addresses of the single-page app: dashboard pages and friend visits (src/utils/route.js).
+const APP_PATHS = ["/tasks", "/calendar", "/daily-tasks", "/money", "/visit/:friendId"];
+app.get(APP_PATHS, (req, res) => res.sendFile(path.join(__dirname, "dist", "index.html")));
 
 // Socket.IO reads the exact same session (set by sessionMiddleware above) off
 // the underlying engine request, so a socket can be tied to a logged-in user

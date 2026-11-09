@@ -1,5 +1,5 @@
 // The dashboard pages each have their own address, so the back button, refresh and bookmarks
-// work. "/" is the meadow. Keep in step with DASHBOARD_PATHS in server.js.
+// work. "/" is the meadow. Keep in step with APP_PATHS in server.js.
 export const PAGE_PATHS = { goals: "/tasks", calendar: "/calendar", daily: "/daily-tasks", money: "/money" };
 
 export function pageFromPath(pathname) {
@@ -10,4 +10,14 @@ export function pageFromPath(pathname) {
 
 export function pathForPage(page) {
     return page ? PAGE_PATHS[page] : "/";
+}
+
+// A friend's meadow: /visit/<their user id>. Read-only; the server checks you're friends.
+export function visitIdFromPath(pathname) {
+    const m = /^\/visit\/(\d{1,9})\/?$/.exec(pathname);
+    return m ? Number(m[1]) : null;
+}
+
+export function pathForVisit(friendId) {
+    return `/visit/${friendId}`;
 }

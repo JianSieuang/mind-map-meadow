@@ -27,7 +27,7 @@ import { browserTimeZone } from "./utils/dates";
 import { taskRewardPreview } from "./utils/rewards";
 import { buildingName, builderErrorMessage, collectableCoins, decorationName, lineBuildingName } from "./utils/builder";
 import { advanceFirstDay, coachMessage, finishFirstDay, hudReveal, markTipSeen } from "./utils/tutorial";
-import { pageFromPath, pathForPage } from "./utils/route";
+import { pageFromPath, pathForPage, pathForVisit, visitIdFromPath } from "./utils/route";
 
 // One socket for the page's lifetime. Under Vite HMR this module re-executes; reuse the
 // existing socket so the already-running Phaser scene (which holds a reference to it)
@@ -81,12 +81,21 @@ export default function App() {
     }, []);
     const openDashboard = useCallback(() => navigate(lastDashboardPage.current), [navigate]);
     useEffect(() => {
-        if (window.location.pathname !== pathForPage(pageFromPath(window.location.pathname))) window.history.replaceState(null, "", "/");
-        const onPopState = () => setDashboardPage(pageFromPath(window.location.pathname));
+        const here = window.location.pathname;
+        if (here !== pathForPage(pageFromPath(here)) && visitIdFromPath(here) === null) window.history.replaceState(null, "", "/");
+        const onPopState = () => {
+            const path = window.location.pathname;
+            setDashboardPage(pageFromPath(path));
+            // Back/forward into or out of a friend's meadow.
+            const friendId = visitIdFromPath(path);
+            if (friendId !== null) socket.emit("visit_friend_map", { friendId });
+            else leaveVisitRef.current?.();
+        };
         window.addEventListener("popstate", onPopState);
         return () => window.removeEventListener("popstate", onPopState);
     }, []);
     const [dashboardRequest, setDashboardRequest] = useState(null);
+    const leaveVisitRef = useRef(null);
 
     const [transactions, setTransactions] = useState([]);
     const [savingsGoals, setSavingsGoals] = useState([]);
@@ -270,6 +279,9 @@ export default function App() {
             if (state.transactions) setTransactions(state.transactions);
             if (state.savingsGoals) setSavingsGoals(state.savingsGoals);
             if (state.builder) applyBuilder(state.builder);
+            // Opened (or reconnected) on /visit/<id>: show that friend's meadow, not ours.
+            const friendId = visitIdFromPath(window.location.pathname);
+            if (friendId !== null) socket.emit("visit_friend_map", { friendId });
         };
 
         const onBuilderState = (state) => {
@@ -413,6 +425,8 @@ export default function App() {
         };
 
         const onVisitState = (data) => {
+            const path = pathForVisit(data.host.id);
+            if (window.location.pathname !== path) window.history.pushState(null, "", path);
             setVisitingFriend(data);
             setSelectedBuildingId(null);
             if (isNarrowViewport()) setActiveHudPanel(null); // the panel would hide the meadow being visited
@@ -422,6 +436,7 @@ export default function App() {
 
         const onVisitFailed = (message) => {
             console.error("❌ [Visit Failed]:", message);
+            if (visitIdFromPath(window.location.pathname) !== null) window.history.replaceState(null, "", "/");
         };
 
         // Re-request on every (re)connect — a reconnect is a fresh server-side socket.
@@ -727,12 +742,15 @@ export default function App() {
         emitAction("visit_friend_map", { friendId });
     };
 
+    // Leaving puts the address back to "/" (unless Back already did).
     const handleLeaveVisit = () => {
         setVisitingFriend(null);
         setSelectedBuildingId(null);
         const scene = getScene();
         if (scene) scene.exitVisitMode();
+        if (visitIdFromPath(window.location.pathname) !== null) window.history.pushState(null, "", "/");
     };
+    leaveVisitRef.current = handleLeaveVisit;
 
     const togglePanel = (panel) => {
         if (isNarrowViewport()) {
