@@ -27,6 +27,7 @@ import { browserTimeZone } from "./utils/dates";
 import { taskRewardPreview } from "./utils/rewards";
 import { buildingName, builderErrorMessage, collectableCoins, decorationName, lineBuildingName } from "./utils/builder";
 import { advanceFirstDay, coachMessage, finishFirstDay, hudReveal, markTipSeen } from "./utils/tutorial";
+import { pageFromPath, pathForPage } from "./utils/route";
 
 // One socket for the page's lifetime. Under Vite HMR this module re-executes; reuse the
 // existing socket so the already-running Phaser scene (which holds a reference to it)
@@ -68,7 +69,23 @@ export default function App() {
     const [tasks, setTasks] = useState([]);
     const [recurringTasks, setRecurringTasks] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+    // Which dashboard page is showing (null = the meadow). Mirrors the address bar.
+    const [dashboardPage, setDashboardPage] = useState(() => pageFromPath(window.location.pathname));
+    const isDashboardOpen = dashboardPage !== null;
+    const lastDashboardPage = useRef(dashboardPage || "goals");
+    const navigate = useCallback((page) => {
+        if (page) lastDashboardPage.current = page;
+        setDashboardPage(page);
+        const path = pathForPage(page);
+        if (window.location.pathname !== path) window.history.pushState(null, "", path);
+    }, []);
+    const openDashboard = useCallback(() => navigate(lastDashboardPage.current), [navigate]);
+    useEffect(() => {
+        if (window.location.pathname !== pathForPage(pageFromPath(window.location.pathname))) window.history.replaceState(null, "", "/");
+        const onPopState = () => setDashboardPage(pageFromPath(window.location.pathname));
+        window.addEventListener("popstate", onPopState);
+        return () => window.removeEventListener("popstate", onPopState);
+    }, []);
     const [dashboardRequest, setDashboardRequest] = useState(null);
 
     const [transactions, setTransactions] = useState([]);
@@ -764,8 +781,8 @@ export default function App() {
     // From the Quick log's Save tab: straight to the Money page with the new-goal form open.
     const handleStartSavingsGoal = () => {
         setIsQuickAddOpen(false);
-        setDashboardRequest({ page: "money", newSavingsGoal: true, id: Date.now() });
-        setIsDashboardOpen(true);
+        setDashboardRequest({ newSavingsGoal: true, id: Date.now() });
+        navigate("money");
     };
 
     const handleCancelPlacement = () => {
@@ -934,7 +951,7 @@ export default function App() {
                         onBuyDecoration={handleBuyDecoration}
                         onOpenGoals={() => {
                             setActiveHudPanel(null);
-                            setIsDashboardOpen(true);
+                            openDashboard();
                         }}
                     />
                 )}
@@ -973,7 +990,7 @@ export default function App() {
                             />
                         )}
                         <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => setIsDashboardOpen(true)} data-coach-target="goals" className={btn(coach?.target === "goals" ? "next" : "muted", `!text-sm px-4 ${coach?.target === "goals" ? "hud-nudge" : ""}`)}>
+                            <button onClick={openDashboard} data-coach-target="goals" className={btn(coach?.target === "goals" ? "next" : "muted", `!text-sm px-4 ${coach?.target === "goals" ? "hud-nudge" : ""}`)}>
                                 <Icon name="goals" /> Tasks
                             </button>
                             <button onClick={() => setIsQuickAddOpen(true)} data-coach-target="log" className={btn(coach?.target === "log" ? "next" : "muted", `!text-sm px-4 ${coach?.target === "log" ? "hud-nudge" : ""}`)}>
@@ -1004,7 +1021,9 @@ export default function App() {
             {/* Tasks, calendar, habits and money */}
             <TaskDashboard
                 isOpen={isDashboardOpen}
-                onClose={() => setIsDashboardOpen(false)}
+                page={dashboardPage}
+                onNavigate={navigate}
+                onClose={() => navigate(null)}
                 tasks={tasks}
                 recurringTasks={recurringTasks}
                 onAddTask={handleAddTask}

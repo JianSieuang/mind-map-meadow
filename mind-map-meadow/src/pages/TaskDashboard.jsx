@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import GoalsPage from "./GoalsPage";
 import CalendarPage from "./CalendarPage";
 import DailyTasksPage from "./DailyTasksPage";
@@ -15,6 +15,8 @@ const PAGES = [
 
 export default function TaskDashboard({
     isOpen,
+    page: activePage, // which page is showing; App keeps it in the address bar
+    onNavigate,
     onClose,
     tasks,
     recurringTasks,
@@ -34,13 +36,8 @@ export default function TaskDashboard({
     onOpenQuickAdd,
     rewardPreview,
     rules,
-    request, // { page, newSavingsGoal?, id }: jump somewhere when opened from elsewhere
+    request, // { newSavingsGoal, id }: open the new-goal form when sent from the Quick log
 }) {
-    const [activePage, setActivePage] = useState("goals");
-
-    useEffect(() => {
-        if (request?.page) setActivePage(request.page);
-    }, [request]);
 
     if (!isOpen) return null;
 
@@ -55,7 +52,7 @@ export default function TaskDashboard({
                 {PAGES.map((page) => (
                     <button
                         key={page.key}
-                        onClick={() => setActivePage(page.key)}
+                        onClick={() => onNavigate(page.key)}
                         aria-pressed={activePage === page.key}
                         className={`shrink-0 flex items-center gap-2 min-h-11 px-2 py-1 rounded-sm text-xs font-bold text-left whitespace-nowrap transition-colors ${activePage === page.key ? "bg-[#f6e6c8] text-[#2b1e1a]" : "text-[#e8c99a] hover:bg-[#3a2820]"}`}
                     >
