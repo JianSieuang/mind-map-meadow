@@ -18,6 +18,7 @@ import { generateTodayInstances } from "./server/recurringTasks.js";
 import { sessionMiddleware, sessionRoomFor } from "./server/sessionMiddleware.js";
 import { allowRequest, attachRateLimit } from "./server/socketGuards.js";
 import authRouter from "./server/auth.js";
+import accountRouter from "./server/accountRoutes.js";
 import { isValidTimeZone } from "./server/timezone.js";
 
 const app = express();
@@ -36,6 +37,7 @@ const __dirname = path.dirname(__filename);
 app.use(express.json());
 app.use(sessionMiddleware);
 app.use("/auth", authRouter);
+app.use("/account", accountRouter);
 app.use(express.static(path.join(__dirname, "dist")));
 // Addresses of the single-page app: dashboard pages and friend visits (src/utils/route.js).
 const APP_PATHS = ["/tasks", "/calendar", "/daily-tasks", "/money", "/visit/:friendId"];

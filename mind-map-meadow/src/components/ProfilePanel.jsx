@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import TownRing from "./TownRing";
 import { Icon, PixelBar } from "./Sprites";
-import { HUD_PANEL_CLASS, LINK_BTN_CLASS, MUTED_TEXT_CLASS, SECTION_TITLE_CLASS } from "./hudStyles";
+import { HUD_PANEL_CLASS, INPUT_CLASS, LINK_BTN_CLASS, MUTED_TEXT_CLASS, SECTION_TITLE_CLASS, btn } from "./hudStyles";
 import { COMPANION_NAME, townProgress } from "../utils/builder";
 import { companionSpriteUrl } from "../utils/sprites";
 
@@ -10,6 +10,59 @@ function TodayRow({ label, value }) {
         <div className="flex items-center justify-between">
             <span className={MUTED_TEXT_CLASS}>{label}</span>
             <span className="font-pixel text-sm leading-none">{value}</span>
+        </div>
+    );
+}
+
+// Download everything, or erase the account for good. Deleting asks you to type DELETE first.
+function YourData() {
+    const [confirming, setConfirming] = useState(false);
+    const [typed, setTyped] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+
+    const deleteAccount = async () => {
+        setBusy(true);
+        setError(null);
+        try {
+            const res = await fetch("/account/delete", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: "DELETE" }) });
+            if (!res.ok) throw new Error();
+            window.location.href = "/";
+        } catch {
+            setError("Couldn't delete the account. Please try again.");
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+                <a href="/account/export" download className={LINK_BTN_CLASS}>
+                    Download my data
+                </a>
+                {!confirming && (
+                    <button onClick={() => setConfirming(true)} className={`${LINK_BTN_CLASS} !text-[#9c2f2b]`}>
+                        Delete account…
+                    </button>
+                )}
+            </div>
+            {confirming && (
+                <div className="flex flex-col gap-1.5 bg-[#f4efe6] border-2 border-[#9c2f2b] rounded-sm p-2">
+                    <p className="text-xs">
+                        This erases your town, tasks, money logs and everything else, <strong>for good</strong>. Download your data first if you want a copy.
+                    </p>
+                    <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Type DELETE" aria-label="Type DELETE to confirm" autoComplete="off" className={INPUT_CLASS} />
+                    {error && <p className="text-xs font-semibold text-[#9c2f2b]">{error}</p>}
+                    <div className="flex gap-1.5">
+                        <button onClick={() => (setConfirming(false), setTyped(""))} className={btn("muted", "flex-1")}>
+                            Keep it
+                        </button>
+                        <button onClick={deleteAccount} disabled={typed.trim() !== "DELETE" || busy} className={btn("danger", "flex-1")}>
+                            {busy ? "Deleting…" : "Delete forever"}
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -83,6 +136,7 @@ export default function ProfilePanel({ stats, builder, aiThought, user, onLogout
                         </button>
                     )}
                 </div>
+                {user && <YourData />}
             </div>
         </div>
     );

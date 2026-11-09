@@ -20,6 +20,10 @@ export default defineConfig({
                 target: "http://localhost:5000",
                 changeOrigin: true,
             },
+            "/account": {
+                target: "http://localhost:5000",
+                changeOrigin: true,
+            },
         },
     },
     build: {
