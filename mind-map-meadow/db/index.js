@@ -27,6 +27,7 @@ export async function runMigrations(pool) {
         "16_economy_tweaks.sql",
         "17_coin_ledger.sql",
         "18_money_subcategory.sql",
+        "19_user_identities.sql",
     ];
 
     await pool.query("CREATE TABLE IF NOT EXISTS schema_migrations (filename VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP DEFAULT NOW())");
