@@ -52,3 +52,8 @@ export function segment(active) {
 
 // A small tag on a row (Heritage, Paused).
 export const TAG_CLASS = "text-xs font-bold px-1.5 py-0.5 rounded-sm leading-none";
+
+// A pickable chip (money categories). Selected is filled dark so hover can't be mistaken for it.
+export function chip(active, extra = "") {
+    return `inline-flex items-center min-h-11 lg:min-h-7 px-2 rounded-sm border-2 border-[#2b1e1a] text-xs font-bold leading-tight transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6f9a] ${active ? "bg-[#6b3f22] text-[#f6e6c8]" : "bg-[#e8c99a] hover:bg-[#f4efe6] text-[#2b1e1a] shadow-[0_2px_0_#2b1e1a]"} ${extra}`;
+}

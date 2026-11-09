@@ -4,6 +4,7 @@ import { DeleteButton } from "../components/TaskRow";
 import { BuildingThumb, Glyph } from "../components/Sprites";
 import { MUTED_TEXT_CLASS, PANEL_CLASS, TAG_CLASS, btn } from "../components/hudStyles";
 import { formatTimeRange } from "../utils/duration";
+import { taskCategoryLabel } from "../utils/taskCategories";
 import { localDateKey, dueDateKey } from "../utils/dates";
 
 export default function DailyTasksPage({ recurringTasks, tasks, onAddRecurringTask, onEditRecurringTask, onDeleteRecurringTask, onToggleRecurringTask, onCompleteTask, rewardPreview, rules }) {
@@ -70,7 +71,7 @@ export default function DailyTasksPage({ recurringTasks, tasks, onAddRecurringTa
                                 <div className="min-w-0 flex-1 basis-40">
                                     <strong className="text-xs block truncate">{template.title}</strong>
                                     <div className={`${MUTED_TEXT_CLASS} flex flex-wrap items-center gap-x-2 mt-0.5`}>
-                                        <span>{template.category}</span>
+                                        <span>{taskCategoryLabel(template.category)}</span>
                                         <span>{formatTimeRange(template.start_time, template.end_time)}</span>
                                         {!template.active && <span className={`${TAG_CLASS} bg-[#cfa877] text-[#2b1e1a]`}>Paused</span>}
                                     </div>

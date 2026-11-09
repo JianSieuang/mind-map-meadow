@@ -96,7 +96,7 @@ function refreshBubble(scene, sprite) {
         bubble.setData("isUiElement", true);
         bubble.on("pointerdown", (pointer, localX, localY, event) => {
             event.stopPropagation();
-            if (scene.placement || scene.isVisiting) return;
+            if (pointer.rightButtonDown() || scene.placement || scene.isVisiting) return;
             const live = sprite.getData("building");
             scene.socket.emit("collect", { buildingId: live.id });
             sprite.setData("collectHoldUntil", Date.now() + 3000);
@@ -245,6 +245,7 @@ export function renderBuilding(scene, raw, onInspect, group, options = {}) {
     // A tap is a press and release with no drag in between; dragstart clears pressedSprite.
     elementSprite.on("pointerdown", (pointer, localX, localY, event) => {
         event.stopPropagation();
+        if (pointer.rightButtonDown()) return;
         if (scene.clearGroundPrompt) scene.clearGroundPrompt();
         scene.pressedSprite = elementSprite;
     });

@@ -2,10 +2,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { DeleteButton } from "../components/TaskRow";
 import { BuildingThumb, Icon, PixelBar } from "../components/Sprites";
 import { INPUT_CLASS, MUTED_TEXT_CLASS, PANEL_CLASS, btn } from "../components/hudStyles";
-import { MIN_SAVINGS_TARGET_CENTS, formatCents, parseAmountToCents, weeklySummary, goalPercent } from "../utils/money";
+import { MIN_SAVINGS_TARGET_CENTS, categoryLabel, formatCents, parseAmountToCents, weeklySummary, goalPercent } from "../utils/money";
 
 const MAX_ACTIVE_GOALS = 5;
 const SUBMIT_WAIT_MS = 6000;
+// The last "new savings goal" request already acted on, so coming back to this page later
+// doesn't reopen the form.
+let handledGoalRequest = null;
 
 const SECTION_HEADING_CLASS = "font-pixel text-lg leading-none text-[#f6e6c8]";
 const EMPTY_TEXT_CLASS = "text-xs text-[#e8c99a]";
@@ -107,8 +110,17 @@ function SavingsGoalCard({ goal, onDelete }) {
     );
 }
 
-export default function MoneyPage({ transactions, savingsGoals, onAddSavingsGoal, onDeleteSavingsGoal, onDeleteTransaction, onOpenQuickAdd }) {
+export default function MoneyPage({ transactions, savingsGoals, onAddSavingsGoal, onDeleteSavingsGoal, onDeleteTransaction, onOpenQuickAdd, newGoalRequest }) {
     const [isAddingGoal, setIsAddingGoal] = useState(false);
+    const goalSectionRef = useRef(null);
+
+    // Sent here from the Quick log's "Start a savings goal": open the form and show it.
+    useEffect(() => {
+        if (newGoalRequest == null || newGoalRequest === handledGoalRequest) return;
+        handledGoalRequest = newGoalRequest;
+        setIsAddingGoal(true);
+        goalSectionRef.current?.scrollIntoView({ block: "start" });
+    }, [newGoalRequest]);
     const closeGoalForm = useRef(() => setIsAddingGoal(false)).current;
 
     const summary = weeklySummary(transactions);
@@ -153,7 +165,7 @@ export default function MoneyPage({ transactions, savingsGoals, onAddSavingsGoal
             </section>
 
             {/* Savings goals */}
-            <section className="flex flex-col gap-2.5">
+            <section ref={goalSectionRef} className="flex flex-col gap-2.5 scroll-mt-4">
                 <div className="flex justify-between items-center gap-2">
                     <h3 className={SECTION_HEADING_CLASS}>Savings goals</h3>
                     {!isAddingGoal && (
@@ -181,7 +193,7 @@ export default function MoneyPage({ transactions, savingsGoals, onAddSavingsGoal
                     <div className={`px-3 py-1 flex flex-col ${PANEL_CLASS}`}>
                         {recent.map((t) => {
                             const amount = signedAmount(t);
-                            const label = t.direction === "saving" ? goalTitleById[t.savings_goal_id] || "Savings" : t.category;
+                            const label = t.direction === "saving" ? goalTitleById[t.savings_goal_id] || "Savings" : categoryLabel(t);
                             return (
                                 <div key={t.id} className="flex items-center gap-2.5 py-1.5 text-xs border-b-2 border-[#e8c99a] last:border-b-0">
                                     <span className="hidden sm:block w-20 shrink-0 text-[#6b3f22]">{String(t.occurred_on).slice(0, 10)}</span>

@@ -1,6 +1,6 @@
 # Mind Map Meadow — Project Plan
 
-Owner: Chong · Project Lead: Claude · Last updated: 2026-11-02
+Owner: Chong · Project Lead: Claude · Last updated: 2026-11-09
 
 ## Vision
 People quit long-term goals (saving money, fitness, learning) because the payoff is far away. Mind Map Meadow makes progress visible **every day**: real tasks and money logs grow a pixel town (SimCity-inspired — you're the builder), and an AI resident lives in it and notices your progress. Built for the owner now, friends next, public later.
@@ -56,6 +56,16 @@ Plus **decorations** (bought with coins; boost nearby buildings), **world landma
 
 ### MVP slice (build first)
 Task → Lv1 building into inventory (5/day) → place (+ "auto-place" option) → workers staff buildings (auto-assign) → buildings fill coin storage → Collect all → merge Lv1→Lv2→Lv3 → zone expansion by town level + coins → production pauses after 3 inactive days → overflow pool with slow catch-up. Existing buildings stay as "heritage" where they are. Deferred to v1.1: weekly villager tiers, world landmarks, decoration boosts.
+
+## Owner feedback queue (2026-11-09)
+Done on `dev`: diagonal movement normalised; right-click = back out (no browser menu); themed caret; money subcategories (Food → Breakfast/Drinks…, plus Travel, Learning, Family & gifts, Investments); Quick log links straight to a new savings goal; "Coding" shown as **Work & Study**; task ideas per category (beginner fitness guide).
+
+### Planned: shortcut key settings (owner asked: plan first)
+- **Settings panel** (gear icon on the HUD rail) → **Controls**: every action with its key; click one, press the new key; **Reset to defaults**.
+- **Defaults:** WASD/arrows move · `L` Quick log · `T` Tasks · `M` map · `B` buildings · `C` collect all · `Esc`/right-click back out · `?` shortcut list.
+- **Rules:** shortcuts never fire while typing in a field; `Esc`, `Tab` and browser keys (Ctrl+W, Ctrl+R…) can't be rebound; binding a key that's taken asks to swap.
+- **Storage:** per account (`users.settings` JSONB), so it follows you to another device; Phaser movement reads the same bindings.
+- Later: a fuller fitness guide (a weekly starter plan by level) if the ideas list proves useful.
 
 ## Art direction (owner: "all buildings need to be redone")
 Full rules: [`docs/ART_STYLE_GUIDE.md`](ART_STYLE_GUIDE.md).

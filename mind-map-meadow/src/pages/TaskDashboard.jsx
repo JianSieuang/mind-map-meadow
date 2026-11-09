@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import GoalsPage from "./GoalsPage";
 import CalendarPage from "./CalendarPage";
 import DailyTasksPage from "./DailyTasksPage";
@@ -34,8 +34,13 @@ export default function TaskDashboard({
     onOpenQuickAdd,
     rewardPreview,
     rules,
+    request, // { page, newSavingsGoal?, id }: jump somewhere when opened from elsewhere
 }) {
     const [activePage, setActivePage] = useState("goals");
+
+    useEffect(() => {
+        if (request?.page) setActivePage(request.page);
+    }, [request]);
 
     if (!isOpen) return null;
 
@@ -80,7 +85,7 @@ export default function TaskDashboard({
                         rules={rules}
                     />
                 )}
-                {activePage === "money" && <MoneyPage transactions={transactions} savingsGoals={savingsGoals} onAddSavingsGoal={onAddSavingsGoal} onDeleteSavingsGoal={onDeleteSavingsGoal} onDeleteTransaction={onDeleteTransaction} onOpenQuickAdd={onOpenQuickAdd} />}
+                {activePage === "money" && <MoneyPage transactions={transactions} savingsGoals={savingsGoals} onAddSavingsGoal={onAddSavingsGoal} onDeleteSavingsGoal={onDeleteSavingsGoal} onDeleteTransaction={onDeleteTransaction} onOpenQuickAdd={onOpenQuickAdd} newGoalRequest={request?.newSavingsGoal ? request.id : null} />}
             </div>
         </div>
     );

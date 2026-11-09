@@ -2,6 +2,7 @@ import { pool } from "./db.js";
 import { localDateKey, isRealDate, addDaysToDateKey } from "./timezone.js";
 import { withTransaction, lockStatsRow, rollDailyCounters, afterCommit, changeCoins } from "./tx.js";
 import { CFG, MAP_RECT } from "./builderRules.js";
+import { MONEY_CATEGORIES, categoryNames, subcategoryNames } from "./moneyCategories.js";
 import { addTownXp, emitBuilderState, fetchBuilderState, fetchOccupied, findFreeSpot, insertLineBuilding, pixelFor, touchActivity, zoneFor } from "./builderState.js";
 
 const MAX_AMOUNT_CENTS = 100000000;
@@ -14,11 +15,7 @@ const MIN_GOAL_TARGET_CENTS = 1000;
 const MAX_NEW_GOALS_PER_DAY = 2;
 const MAX_BACKDATE_DAYS = 366;
 
-const CATEGORIES = {
-    expense: ["Food", "Transport", "Shopping", "Bills", "Fun", "Health", "Other"],
-    income: ["Salary", "Side Income", "Gift", "Other"],
-    saving: ["Savings"],
-};
+const CATEGORIES = Object.fromEntries(Object.keys(MONEY_CATEGORIES).map((d) => [d, categoryNames(d)]));
 
 function roomFor(userId) {
     return `user:${userId}`;
@@ -33,6 +30,11 @@ function normalizeCategory(direction, category) {
     return direction === "saving" ? "Savings" : "Other";
 }
 
+// Only a subcategory listed under the (already normalised) category is kept.
+function normalizeSubcategory(direction, category, subcategory) {
+    return typeof subcategory === "string" && subcategoryNames(direction, category).includes(subcategory) ? subcategory : null;
+}
+
 function normalizeNote(note) {
     if (typeof note !== "string") return null;
     const trimmed = note.trim().slice(0, 140);
@@ -42,7 +44,7 @@ function normalizeNote(note) {
 // Works with either the pool or a checked-out client.
 export async function fetchMoneyState(db, userId) {
     const transactions = await db.query(
-        `SELECT id, amount_cents, direction, category, note, occurred_on, reward_coins, savings_goal_id, created_at
+        `SELECT id, amount_cents, direction, category, subcategory, note, occurred_on, reward_coins, savings_goal_id, created_at
          FROM transactions WHERE user_id = $1 AND deleted_at IS NULL
          ORDER BY occurred_on DESC, id DESC LIMIT 300`,
         [userId],
@@ -76,7 +78,7 @@ export function registerMoneyEvents(io, socket) {
     const fail = (message) => socket.emit("money_error", message);
 
     socket.on("add_transaction", async (payload) => {
-        const { amountCents, direction, category, note, occurredOn, savingsGoalId } = payload ?? {};
+        const { amountCents, direction, category, subcategory, note, occurredOn, savingsGoalId } = payload ?? {};
 
         if (!isValidCents(amountCents)) return fail("Amount must be between 0.01 and 1,000,000.");
         if (!Object.hasOwn(CATEGORIES, direction)) return fail("Unknown transaction type.");
@@ -115,10 +117,11 @@ export function registerMoneyEvents(io, socket) {
                 const loggedToday = await client.query(`SELECT COUNT(*)::int AS n FROM transactions WHERE user_id = $1 AND logged_on = $2`, [userId, capDay]);
                 const isFirstLogToday = loggedToday.rows[0].n === 0;
 
+                const cleanCategory = normalizeCategory(direction, category);
                 await client.query(
-                    `INSERT INTO transactions (user_id, amount_cents, direction, category, note, occurred_on, logged_on, reward_coins, savings_goal_id)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-                    [userId, amountCents, direction, normalizeCategory(direction, category), normalizeNote(note), occurredDate, capDay, logReward, goal ? goal.id : null],
+                    `INSERT INTO transactions (user_id, amount_cents, direction, category, subcategory, note, occurred_on, logged_on, reward_coins, savings_goal_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                    [userId, amountCents, direction, cleanCategory, normalizeSubcategory(direction, cleanCategory, subcategory), normalizeNote(note), occurredDate, capDay, logReward, goal ? goal.id : null],
                 );
 
                 const rewards = [];

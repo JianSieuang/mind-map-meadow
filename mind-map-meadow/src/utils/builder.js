@@ -19,7 +19,7 @@ export function rarityStyle(rarity) {
     return RARITY_STYLES[String(rarity || "").toLowerCase()] || RARITY_STYLES.normal;
 }
 
-const LINE_LABELS = { fitness: "Fitness", coding: "Coding", finance: "Finance", habit: "Home" };
+const LINE_LABELS = { fitness: "Fitness", coding: "Work & Study", finance: "Finance", habit: "Home" };
 
 export function lineLabel(line) {
     return LINE_LABELS[line] || "";
@@ -167,7 +167,7 @@ export function rarityOdds(rules) {
 
 const SKILL_TEXT = {
     trainer: "Best in fitness buildings",
-    scholar: "Best in coding buildings",
+    scholar: "Best in Work & Study buildings",
     merchant: "Best in finance buildings",
     "all-rounder": "A little quicker everywhere",
 };

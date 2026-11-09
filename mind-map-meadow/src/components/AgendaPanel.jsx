@@ -1,5 +1,6 @@
 import React from "react";
 import { Icon } from "./Sprites";
+import { taskCategoryLabel } from "../utils/taskCategories";
 import { COUNT_CHIP_CLASS, HUD_PANEL_CLASS, MUTED_TEXT_CLASS, PANEL_TITLE_CLASS, ROW_CLASS, btn } from "./hudStyles";
 
 export default function AgendaPanel({ tasks, onCompleteTask }) {
@@ -16,7 +17,7 @@ export default function AgendaPanel({ tasks, onCompleteTask }) {
                     <div key={task.id} className={ROW_CLASS}>
                         <div className="min-w-0 flex-1">
                             <strong className="text-xs block truncate">{task.title}</strong>
-                            <small className={MUTED_TEXT_CLASS}>{task.category}</small>
+                            <small className={MUTED_TEXT_CLASS}>{taskCategoryLabel(task.category)}</small>
                         </div>
                         <button onClick={() => onCompleteTask(task.id)} className={btn("confirm", "shrink-0")}>
                             Done

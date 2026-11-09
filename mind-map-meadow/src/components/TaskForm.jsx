@@ -1,21 +1,48 @@
 import React, { useState } from "react";
 import { BuildingThumb, Coin } from "./Sprites";
-import { INPUT_CLASS, LABEL_CLASS, LINK_BTN_CLASS, MUTED_TEXT_CLASS, SEGMENT_GROUP_CLASS, btn, segment } from "./hudStyles";
+import { INPUT_CLASS, LABEL_CLASS, LINK_BTN_CLASS, MUTED_TEXT_CLASS, SEGMENT_GROUP_CLASS, btn, chip, segment } from "./hudStyles";
 import { lineForCategory } from "../utils/rewards";
 import { lineBuildingName } from "../utils/builder";
 import { localDateKey } from "../utils/dates";
+import { TASK_CATEGORIES, TASK_IDEAS, taskCategoryLabel } from "../utils/taskCategories";
 import { DURATION_UNITS, minutesFromDuration, dueDateFromDuration, durationFromMinutes, formatMinutes } from "../utils/duration";
 
-export const TASK_CATEGORIES = ["Coding", "Fitness", "Finance"];
+export { TASK_CATEGORIES };
 
 export function CategoryPicker({ value, onChange }) {
     return (
         <div className={`${SEGMENT_GROUP_CLASS} grid-cols-3`} role="group" aria-label="Category">
             {TASK_CATEGORIES.map((category) => (
                 <button key={category} type="button" onClick={() => onChange(category)} aria-pressed={value === category} className={segment(value === category)}>
-                    {category}
+                    {taskCategoryLabel(category)}
                 </button>
             ))}
+        </div>
+    );
+}
+
+// A few ready-made tasks for the chosen category; tapping one fills the title.
+export function TaskIdeas({ category, onPick }) {
+    const [open, setOpen] = useState(false);
+    const guide = TASK_IDEAS[category];
+    if (!guide) return null;
+    return (
+        <div className="flex flex-col gap-1.5">
+            <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={`${LINK_BTN_CLASS} self-start`}>
+                {open ? "Hide ideas" : `Not sure what to do? ${taskCategoryLabel(category)} ideas`}
+            </button>
+            {open && (
+                <div className="flex flex-col gap-1.5 bg-[#f4efe6] border-2 border-[#cfa877] rounded-sm p-2">
+                    <p className={MUTED_TEXT_CLASS}>{guide.tip}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                        {guide.ideas.map((idea) => (
+                            <button key={idea} type="button" onClick={() => onPick(idea)} className={chip(false, "!font-semibold text-left")}>
+                                {idea}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -76,6 +103,8 @@ export default function TaskForm({ initialValues, onSubmit, onCancel, submitLabe
             </div>
 
             <CategoryPicker value={category} onChange={setCategory} />
+
+            {!initialValues?.title && <TaskIdeas key={category} category={category} onPick={setTitle} />}
 
             <button type="button" onClick={() => setShowMore((open) => !open)} aria-expanded={showMore} className={`${LINK_BTN_CLASS} self-start`}>
                 {showMore ? "Less" : `More: ${formatMinutes(estimatedMinutes)}, due ${date === localDateKey() ? "today" : date}`}

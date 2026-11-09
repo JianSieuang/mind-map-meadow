@@ -6,6 +6,27 @@ const log = (s, extra = {}) => call(s, "add_transaction", { amountCents: 500, di
 const money = (m) => m.moneyError;
 
 export async function run() {
+    section("add_transaction: subcategories");
+    {
+        const u = await mkUser("moneysub");
+        const s = await connect(u);
+        await init(s);
+        await log(s, { subcategory: "Breakfast" });
+        await log(s, { subcategory: "Rent" }); // belongs to Bills, not Food
+        await log(s, { category: "Nope", subcategory: "Breakfast" }); // category falls back to Other
+        await log(s, { subcategory: { evil: 1 } });
+        await call(s, "add_transaction", { amountCents: 100, direction: "income", category: "Side Income", subcategory: "Freelance" });
+        const rows = await qa("SELECT category, subcategory FROM transactions WHERE user_id=$1 ORDER BY id", [u.id]);
+        eq(
+            "valid subcategory kept, anything else stored as null",
+            rows.map((r) => [r.category, r.subcategory]),
+            [["Food", "Breakfast"], ["Food", null], ["Other", null], ["Food", null], ["Side Income", "Freelance"]],
+        );
+        const listed = await call(s, "add_transaction", { amountCents: 100, direction: "expense", category: "Food", subcategory: "Drinks" });
+        const refreshed = listed.all.find(([e]) => e === "refresh_money")?.[1];
+        check("refresh_money lists the subcategory", refreshed?.transactions?.some((t) => t.subcategory === "Drinks"), refreshed?.transactions?.[0]);
+    }
+
     section("add_transaction: rewards and the daily stall");
     {
         const u = await mkUser("money");

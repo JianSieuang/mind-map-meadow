@@ -413,7 +413,10 @@ export class MeadowScene extends Phaser.Scene {
         // Released over a HUD element: the pan ends, but it was never a tap on the ground.
         scene.input.on("pointerupoutside", (pointer) => endGroundPress(scene, pointer, false));
 
+        // Right-click is "back out" (handled in App, like Esc), never a tap on the map.
+        scene.input.mouse?.disableContextMenu();
         scene.input.on("pointerdown", (pointer, localObjects) => {
+            if (pointer.rightButtonDown()) return;
             if (localObjects.some((obj) => obj.getData("isUiElement"))) return;
             scene.pressedSprite = null;
             if (scene.placement) {
@@ -440,22 +443,15 @@ export class MeadowScene extends Phaser.Scene {
         let moved = false;
         const keyboardActive = this.input.keyboard.isActive();
         if (keyboardActive) {
-            window.player.body.setVelocity(0);
-            if (window.inputKeys.left.isDown) {
-                window.player.body.setVelocityX(-MAP_CONFIG.PLAYER_SPEED);
+            // Same speed in every direction: a diagonal is normalised, not √2 faster.
+            const dx = (window.inputKeys.right.isDown ? 1 : 0) - (window.inputKeys.left.isDown ? 1 : 0);
+            const dy = (window.inputKeys.down.isDown ? 1 : 0) - (window.inputKeys.up.isDown ? 1 : 0);
+            const len = Math.hypot(dx, dy);
+            if (len > 0) {
+                window.player.body.setVelocity((dx / len) * MAP_CONFIG.PLAYER_SPEED, (dy / len) * MAP_CONFIG.PLAYER_SPEED);
                 moved = true;
-            }
-            if (window.inputKeys.right.isDown) {
-                window.player.body.setVelocityX(MAP_CONFIG.PLAYER_SPEED);
-                moved = true;
-            }
-            if (window.inputKeys.up.isDown) {
-                window.player.body.setVelocityY(-MAP_CONFIG.PLAYER_SPEED);
-                moved = true;
-            }
-            if (window.inputKeys.down.isDown) {
-                window.player.body.setVelocityY(MAP_CONFIG.PLAYER_SPEED);
-                moved = true;
+            } else {
+                window.player.body.setVelocity(0);
             }
         }
         if (moved) {

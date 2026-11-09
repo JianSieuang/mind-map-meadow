@@ -69,6 +69,7 @@ export default function App() {
     const [recurringTasks, setRecurringTasks] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+    const [dashboardRequest, setDashboardRequest] = useState(null);
 
     const [transactions, setTransactions] = useState([]);
     const [savingsGoals, setSavingsGoals] = useState([]);
@@ -587,9 +588,11 @@ export default function App() {
     }, [keyboardFrozen]);
 
     // Esc backs out of whatever is on top. The summon reveal and quick-log handle their own.
+    // Right-click does the same, and never opens the browser menu ("Copy image" and so on),
+    // except in text fields, where copy and paste still matter.
     useEffect(() => {
-        const onKeyDown = (e) => {
-            if (e.key !== "Escape" || summonRef.current || isQuickAddOpen || isDashboardOpen) return;
+        const backOut = () => {
+            if (summonRef.current || isQuickAddOpen || isDashboardOpen) return;
             if (placingRef.current) {
                 getScene()?.cancelPlacement?.();
                 finishPlacement({ ok: false });
@@ -602,8 +605,20 @@ export default function App() {
                 getScene()?.clearActiveMenu?.();
             }
         };
+        const onKeyDown = (e) => {
+            if (e.key === "Escape") backOut();
+        };
+        const onContextMenu = (e) => {
+            if (e.target.closest?.("input, textarea, select, [contenteditable='true']")) return;
+            e.preventDefault();
+            backOut();
+        };
         window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
+        window.addEventListener("contextmenu", onContextMenu);
+        return () => {
+            window.removeEventListener("keydown", onKeyDown);
+            window.removeEventListener("contextmenu", onContextMenu);
+        };
     }, [isModalOpen, isQuickAddOpen, isDashboardOpen, activeHudPanel, selectedBuildingId, finishPlacement]);
 
     // The Phaser-side map opens directly below the town sign and stops short of whatever is in the
@@ -658,8 +673,8 @@ export default function App() {
         emitAction("toggle_recurring_task", { id, active });
     };
 
-    const handleAddTransaction = ({ amountCents, direction, category, note, savingsGoalId }) => {
-        emitAction("add_transaction", { amountCents, direction, category, note, savingsGoalId });
+    const handleAddTransaction = ({ amountCents, direction, category, subcategory, note, savingsGoalId }) => {
+        emitAction("add_transaction", { amountCents, direction, category, subcategory, note, savingsGoalId });
     };
 
     const handleDeleteTransaction = (id) => {
@@ -744,6 +759,13 @@ export default function App() {
 
     const handleBuyDecoration = (assetKey) => {
         startPlacement({ buildingId: null, footprint: builder?.rules?.FOOTPRINT?.decoration, mode: "purchase", assetKey }, decorationName(assetKey));
+    };
+
+    // From the Quick log's Save tab: straight to the Money page with the new-goal form open.
+    const handleStartSavingsGoal = () => {
+        setIsQuickAddOpen(false);
+        setDashboardRequest({ page: "money", newSavingsGoal: true, id: Date.now() });
+        setIsDashboardOpen(true);
     };
 
     const handleCancelPlacement = () => {
@@ -1001,10 +1023,11 @@ export default function App() {
                 onOpenQuickAdd={() => setIsQuickAddOpen(true)}
                 rewardPreview={rewardPreview}
                 rules={rules}
+                request={dashboardRequest}
             />
 
             {/* Money quick-log (rendered above the dashboard so it also works from the Money page) */}
-            <QuickAddMoney isOpen={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} onSubmit={handleAddTransaction} savingsGoals={savingsGoals} />
+            <QuickAddMoney isOpen={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} onSubmit={handleAddTransaction} savingsGoals={savingsGoals} onStartSavingsGoal={handleStartSavingsGoal} />
 
             {/* Mystery summon reveal */}
             {summon && <SummonReveal key={summon.round} result={summon.result} onRequest={handleRequestSummon} onClose={handleCloseSummon} onOpenAnother={handleOpenSummon} />}

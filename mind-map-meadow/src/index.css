@@ -1,3 +1,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Text fields use the town's colours: a gold caret and a cream-on-wood selection. */
+input,
+textarea {
+    caret-color: #a8770b;
+}
+::selection {
+    background: #ffd65a;
+    color: #2b1e1a;
+}
+
+/* Sprites aren't web images: no drag ghost, no "Save image" behaviour. */
+img {
+    -webkit-user-drag: none;
+    user-select: none;
+}

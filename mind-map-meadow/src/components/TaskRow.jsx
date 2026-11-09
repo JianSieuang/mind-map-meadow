@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { BuildingThumb, Coin } from "./Sprites";
 import { MUTED_TEXT_CLASS, btn } from "./hudStyles";
 import { lineForCategory } from "../utils/rewards";
+import { taskCategoryLabel } from "../utils/taskCategories";
 
 // Delete asks once, then forgets if you don't confirm.
 export function useConfirmDelete(onDelete) {
@@ -40,7 +41,7 @@ export function PendingTaskRow({ task, meta, onEdit, onDelete, onComplete }) {
             <div className="min-w-0 flex-1 basis-40">
                 <strong className="text-xs block truncate">{task.title}</strong>
                 <div className={`${MUTED_TEXT_CLASS} flex flex-wrap items-center gap-x-2 mt-0.5`}>
-                    <span>{task.category}</span>
+                    <span>{taskCategoryLabel(task.category)}</span>
                     {meta}
                 </div>
             </div>
@@ -63,7 +64,7 @@ export function CompletedTaskRow({ task, onDelete }) {
             <div className="min-w-0 flex-1">
                 <strong className="text-xs text-[#6b3f22] block truncate line-through">{task.title}</strong>
                 <div className={`${MUTED_TEXT_CLASS} flex items-center gap-2 mt-0.5`}>
-                    <span>{task.category}</span>
+                    <span>{taskCategoryLabel(task.category)}</span>
                     <span className="flex items-center gap-1">
                         <Coin /> <span className="font-pixel text-sm leading-none text-[#2b1e1a]">+{task.coins_earned}</span>
                     </span>

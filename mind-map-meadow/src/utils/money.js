@@ -1,4 +1,7 @@
 import { localDateKey } from "./dates";
+import { MONEY_CATEGORIES, categoryNames, subcategoryNames } from "../../server/moneyCategories.js";
+
+export { subcategoryNames };
 
 export const DIRECTIONS = [
     { key: "expense", label: "Expense" },
@@ -6,11 +9,12 @@ export const DIRECTIONS = [
     { key: "saving", label: "Save" },
 ];
 
-export const CATEGORIES = {
-    expense: ["Food", "Transport", "Shopping", "Bills", "Fun", "Health", "Other"],
-    income: ["Salary", "Side Income", "Gift", "Other"],
-    saving: ["Savings"],
-};
+export const CATEGORIES = Object.fromEntries(Object.keys(MONEY_CATEGORIES).map((d) => [d, categoryNames(d)]));
+
+// "Food · Breakfast", or just "Food".
+export function categoryLabel(t) {
+    return t.subcategory ? `${t.category} · ${t.subcategory}` : t.category;
+}
 
 export const MAX_AMOUNT_CENTS = 100_000_000; // 1,000,000.00
 export const MIN_SAVINGS_TARGET_CENTS = 1000; // 10.00, same floor the server enforces

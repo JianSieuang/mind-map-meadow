@@ -10,7 +10,7 @@ import { localDateKey, dueDateKey } from "../utils/dates";
 const TABS = [
     { key: "all", label: "All" },
     { key: "due", label: "Due" },
-    { key: "Coding", label: "Coding" },
+    { key: "Coding", label: "Work & Study" },
     { key: "Fitness", label: "Fitness" },
     { key: "Finance", label: "Finance" },
     { key: "completed", label: "Completed" },

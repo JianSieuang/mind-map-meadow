@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Icon } from "./Sprites";
-import { CLOSE_BTN_CLASS, INPUT_CLASS, PANEL_CLASS, SEGMENT_GROUP_CLASS, btn, segment } from "./hudStyles";
-import { CATEGORIES, DIRECTIONS, parseAmountToCents, formatCents } from "../utils/money";
+import { CLOSE_BTN_CLASS, INPUT_CLASS, PANEL_CLASS, SEGMENT_GROUP_CLASS, btn, chip, segment } from "./hudStyles";
+import { CATEGORIES, DIRECTIONS, parseAmountToCents, formatCents, subcategoryNames } from "../utils/money";
 
-export default function QuickAddMoney({ isOpen, onClose, onSubmit, savingsGoals }) {
+export default function QuickAddMoney({ isOpen, onClose, onSubmit, savingsGoals, onStartSavingsGoal }) {
     const [direction, setDirection] = useState("expense");
     const [amount, setAmount] = useState("");
     const [category, setCategory] = useState(CATEGORIES.expense[0]);
+    const [subcategory, setSubcategory] = useState(null);
     const [note, setNote] = useState("");
     const [goalId, setGoalId] = useState(null);
     const amountRef = useRef(null);
@@ -18,6 +19,7 @@ export default function QuickAddMoney({ isOpen, onClose, onSubmit, savingsGoals 
         setDirection("expense");
         setAmount("");
         setCategory(CATEGORIES.expense[0]);
+        setSubcategory(null);
         setNote("");
         setTimeout(() => amountRef.current?.focus(), 0);
     }, [isOpen]);
@@ -34,9 +36,15 @@ export default function QuickAddMoney({ isOpen, onClose, onSubmit, savingsGoals 
     const needsGoal = direction === "saving";
     const canSubmit = amountCents !== null && (!needsGoal || goalId !== null);
 
+    const pickCategory = (c) => {
+        setCategory(c);
+        setSubcategory(null);
+    };
+    const subcategories = direction === "saving" ? [] : subcategoryNames(direction, category);
+
     const switchDirection = (key) => {
         setDirection(key);
-        setCategory(CATEGORIES[key][0]);
+        pickCategory(CATEGORIES[key][0]);
     };
 
     const submit = () => {
@@ -45,6 +53,7 @@ export default function QuickAddMoney({ isOpen, onClose, onSubmit, savingsGoals 
             amountCents,
             direction,
             category,
+            subcategory: subcategory || undefined,
             note: note.trim() || undefined,
             savingsGoalId: needsGoal ? goalId : undefined,
         });
@@ -93,15 +102,33 @@ export default function QuickAddMoney({ isOpen, onClose, onSubmit, savingsGoals 
                 />
 
                 {direction !== "saving" ? (
-                    <div className="flex flex-wrap gap-1.5">
-                        {CATEGORIES[direction].map((c) => (
-                            <button key={c} onClick={() => setCategory(c)} aria-pressed={category === c} className={btn(category === c ? "pressed" : "muted", "lg:!min-h-7 !px-2")}>
-                                {c}
-                            </button>
-                        ))}
-                    </div>
+                    <>
+                        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Category">
+                            {CATEGORIES[direction].map((c) => (
+                                <button key={c} onClick={() => pickCategory(c)} aria-pressed={category === c} className={chip(category === c)}>
+                                    {c}
+                                </button>
+                            ))}
+                        </div>
+                        {subcategories.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pl-2 border-l-2 border-[#cfa877]" role="group" aria-label={`${category}, more detail (optional)`}>
+                                {subcategories.map((sc) => (
+                                    <button key={sc} onClick={() => setSubcategory(subcategory === sc ? null : sc)} aria-pressed={subcategory === sc} className={chip(subcategory === sc, "!font-semibold")}>
+                                        {sc}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </>
                 ) : activeGoals.length === 0 ? (
-                    <p className="text-xs bg-[#f4efe6] border-2 border-[#cfa877] rounded-sm px-2 py-1.5">Start a savings goal first: Tasks, then Money.</p>
+                    <div className="flex items-center justify-between gap-2 text-xs bg-[#f4efe6] border-2 border-[#cfa877] rounded-sm px-2 py-1.5">
+                        <span>Saving needs a goal to save toward.</span>
+                        {onStartSavingsGoal && (
+                            <button onClick={onStartSavingsGoal} className={btn("next", "shrink-0")}>
+                                Start a savings goal
+                            </button>
+                        )}
+                    </div>
                 ) : (
                     <select value={goalId ?? ""} onChange={(e) => setGoalId(Number(e.target.value))} aria-label="Savings goal" className={INPUT_CLASS}>
                         {activeGoals.map((g) => (
