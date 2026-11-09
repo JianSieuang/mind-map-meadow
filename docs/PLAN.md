@@ -58,7 +58,7 @@ Plus **decorations** (bought with coins; boost nearby buildings), **world landma
 Task → Lv1 building into inventory (5/day) → place (+ "auto-place" option) → workers staff buildings (auto-assign) → buildings fill coin storage → Collect all → merge Lv1→Lv2→Lv3 → zone expansion by town level + coins → production pauses after 3 inactive days → overflow pool with slow catch-up. Existing buildings stay as "heritage" where they are. Deferred to v1.1: weekly villager tiers, world landmarks, decoration boosts.
 
 ## Owner feedback queue (2026-11-09)
-Done on `dev`: diagonal movement normalised; right-click = back out (no browser menu); themed caret; money subcategories (Food → Breakfast/Drinks…, plus Travel, Learning, Family & gifts, Investments); Quick log links straight to a new savings goal; "Coding" shown as **Work & Study**; task ideas per category (beginner fitness guide).
+Done on `dev`: task form and Quick log redesigned (equal tiles, recent picks, optional detail as one row, ideas only while the title is empty); diagonal movement normalised; right-click = back out (no browser menu); themed caret; money subcategories (Food → Breakfast/Drinks…, plus Travel, Learning, Family & gifts, Investments); Quick log links straight to a new savings goal; "Coding" shown as **Work & Study**; task ideas per category (beginner fitness guide).
 
 ### Planned: shortcut key settings (owner asked: plan first)
 - **Settings panel** (gear icon on the HUD rail) → **Controls**: every action with its key; click one, press the new key; **Reset to defaults**.
@@ -66,6 +66,13 @@ Done on `dev`: diagonal movement normalised; right-click = back out (no browser 
 - **Rules:** shortcuts never fire while typing in a field; `Esc`, `Tab` and browser keys (Ctrl+W, Ctrl+R…) can't be rebound; binding a key that's taken asks to swap.
 - **Storage:** per account (`users.settings` JSONB), so it follows you to another device; Phaser movement reads the same bindings.
 - Later: a fuller fitness guide (a weekly starter plan by level) if the ideas list proves useful.
+
+### Planned: fitness tracker (owner, 2026-11-09)
+- **Long plan:** pick a level (just starting / some / active) and a goal (move more, get stronger, endurance) → a 4–8 week plan whose daily sessions become tasks. Plans step up slowly; any missed day just moves the plan on, never resets it.
+- **Calories (estimate):** each workout shows kcal burned from MET × body weight × time (e.g. brisk walk MET 3.5). Shown as "about", never as diet advice.
+- **Body log:** weight, height, optional waist; BMI computed and charted over time, with a note that BMI is a rough guide. Fitness page gets a weekly chart: minutes moved, sessions, kcal.
+- **Rewards follow the same rule as money: reward logging, never the number.** Logging a weigh-in earns coins (capped per week), whatever it says; a weight change itself is never rewarded or punished.
+- **Privacy:** health data is as private as money: never sent to an LLM, never shown to friends, optional, and deletable with the account.
 
 ## Art direction (owner: "all buildings need to be redone")
 Full rules: [`docs/ART_STYLE_GUIDE.md`](ART_STYLE_GUIDE.md).

@@ -1027,7 +1027,7 @@ export default function App() {
             />
 
             {/* Money quick-log (rendered above the dashboard so it also works from the Money page) */}
-            <QuickAddMoney isOpen={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} onSubmit={handleAddTransaction} savingsGoals={savingsGoals} onStartSavingsGoal={handleStartSavingsGoal} />
+            <QuickAddMoney isOpen={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} onSubmit={handleAddTransaction} savingsGoals={savingsGoals} transactions={transactions} onStartSavingsGoal={handleStartSavingsGoal} />
 
             {/* Mystery summon reveal */}
             {summon && <SummonReveal key={summon.round} result={summon.result} onRequest={handleRequestSummon} onClose={handleCloseSummon} onOpenAnother={handleOpenSummon} />}

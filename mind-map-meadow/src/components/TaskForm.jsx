@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { BuildingThumb, Coin } from "./Sprites";
-import { INPUT_CLASS, LABEL_CLASS, LINK_BTN_CLASS, MUTED_TEXT_CLASS, SEGMENT_GROUP_CLASS, btn, chip, segment } from "./hudStyles";
+import { BuildingThumb, Coin, Glyph } from "./Sprites";
+import { INPUT_CLASS, LABEL_CLASS, MUTED_TEXT_CLASS, btn } from "./hudStyles";
 import { lineForCategory } from "../utils/rewards";
 import { lineBuildingName } from "../utils/builder";
 import { localDateKey } from "../utils/dates";
@@ -9,40 +9,49 @@ import { DURATION_UNITS, minutesFromDuration, dueDateFromDuration, durationFromM
 
 export { TASK_CATEGORIES };
 
-export function CategoryPicker({ value, onChange }) {
+// Equal tiles; on the task form each one shows the building its category makes, which is the
+// real difference between them.
+export function CategoryPicker({ value, onChange, showBuildings = false }) {
     return (
-        <div className={`${SEGMENT_GROUP_CLASS} grid-cols-3`} role="group" aria-label="Category">
-            {TASK_CATEGORIES.map((category) => (
-                <button key={category} type="button" onClick={() => onChange(category)} aria-pressed={value === category} className={segment(value === category)}>
-                    {taskCategoryLabel(category)}
-                </button>
-            ))}
+        <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="Category">
+            {TASK_CATEGORIES.map((category) => {
+                const active = value === category;
+                return (
+                    <button
+                        key={category}
+                        type="button"
+                        onClick={() => onChange(category)}
+                        aria-pressed={active}
+                        className={`flex items-center justify-center gap-1.5 min-h-11 px-1.5 py-1 rounded-sm border-2 text-xs font-bold leading-tight transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6f9a] ${
+                            active ? "bg-[#6b3f22] border-[#2b1e1a] text-[#f6e6c8]" : "bg-[#f4efe6] border-[#cfa877] text-[#2b1e1a] hover:border-[#2b1e1a]"
+                        }`}
+                    >
+                        {showBuildings && <BuildingThumb assetKey={`${lineForCategory(category)}_1`} size={28} />}
+                        <span className="text-left">{taskCategoryLabel(category)}</span>
+                    </button>
+                );
+            })}
         </div>
     );
 }
 
-// A few ready-made tasks for the chosen category; tapping one fills the title.
-export function TaskIdeas({ category, onPick }) {
-    const [open, setOpen] = useState(false);
-    const guide = TASK_IDEAS[category];
-    if (!guide) return null;
+// While the title is empty: one row of ready-made tasks for the chosen category. Tap fills it in.
+function TaskIdeas({ category, onPick }) {
+    const ideas = TASK_IDEAS[category]?.ideas;
+    if (!ideas) return null;
     return (
-        <div className="flex flex-col gap-1.5">
-            <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={`${LINK_BTN_CLASS} self-start`}>
-                {open ? "Hide ideas" : `Not sure what to do? ${taskCategoryLabel(category)} ideas`}
-            </button>
-            {open && (
-                <div className="flex flex-col gap-1.5 bg-[#f4efe6] border-2 border-[#cfa877] rounded-sm p-2">
-                    <p className={MUTED_TEXT_CLASS}>{guide.tip}</p>
-                    <div className="flex flex-wrap gap-1.5">
-                        {guide.ideas.map((idea) => (
-                            <button key={idea} type="button" onClick={() => onPick(idea)} className={chip(false, "!font-semibold text-left")}>
-                                {idea}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
+        <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]" role="group" aria-label="Ideas">
+            <span className={`${LABEL_CLASS} shrink-0`}>Try</span>
+            {ideas.map((idea) => (
+                <button
+                    key={idea}
+                    type="button"
+                    onClick={() => onPick(idea)}
+                    className="shrink-0 min-h-9 lg:min-h-7 px-2.5 rounded-full border-2 border-[#cfa877] text-xs font-semibold text-[#6b3f22] whitespace-nowrap hover:border-[#6b3f22] transition-colors"
+                >
+                    {idea}
+                </button>
+            ))}
         </div>
     );
 }
@@ -95,20 +104,32 @@ export default function TaskForm({ initialValues, onSubmit, onCancel, submitLabe
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
-            <div className="flex flex-col gap-0.5">
-                <label htmlFor="task-title" className={LABEL_CLASS}>
-                    Task
-                </label>
-                <input id="task-title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Finish the report" required autoFocus={!initialValues?.title} className={INPUT_CLASS} />
+            <input
+                id="task-title"
+                type="text"
+                aria-label="Task"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={TASK_IDEAS[category]?.placeholder || "What will you do?"}
+                required
+                autoFocus={!initialValues?.title}
+                className={INPUT_CLASS}
+            />
+
+            <CategoryPicker value={category} onChange={setCategory} showBuildings />
+
+            {!title.trim() && <TaskIdeas category={category} onPick={setTitle} />}
+
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+                <button type="button" onClick={() => setShowMore((open) => !open)} aria-expanded={showMore} className="inline-flex items-center gap-1.5 min-h-9 lg:min-h-7 px-2.5 rounded-full border-2 border-[#cfa877] text-xs font-semibold text-[#6b3f22] hover:border-[#6b3f22] transition-colors">
+                    <Glyph name="calendar" size={14} /> {formatMinutes(estimatedMinutes)} · due {date === localDateKey() ? "today" : date} <span aria-hidden="true">{showMore ? "▴" : "▾"}</span>
+                </button>
+                {rewardPreview?.label && (
+                    <span className="text-xs font-bold flex items-center gap-1" title={`Finishing it builds a ${lineBuildingName(line, 1, rules)}.`}>
+                        <Coin /> {rewardPreview.label}
+                    </span>
+                )}
             </div>
-
-            <CategoryPicker value={category} onChange={setCategory} />
-
-            {!initialValues?.title && <TaskIdeas key={category} category={category} onPick={setTitle} />}
-
-            <button type="button" onClick={() => setShowMore((open) => !open)} aria-expanded={showMore} className={`${LINK_BTN_CLASS} self-start`}>
-                {showMore ? "Less" : `More: ${formatMinutes(estimatedMinutes)}, due ${date === localDateKey() ? "today" : date}`}
-            </button>
 
             {showMore && (
                 <div className="flex flex-col gap-2.5">
@@ -133,8 +154,6 @@ export default function TaskForm({ initialValues, onSubmit, onCancel, submitLabe
                     </div>
                 </div>
             )}
-
-            <RewardPreview rewardPreview={rewardPreview} line={line} text={`Finishing it builds a ${lineBuildingName(line, 1, rules)}.`} />
 
             <div className="flex gap-2 mt-0.5">
                 {onCancel && (
