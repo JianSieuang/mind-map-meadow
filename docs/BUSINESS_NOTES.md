@@ -49,7 +49,7 @@ Sources: [Claude pricing](https://platform.claude.com/docs/en/about-claude/prici
 
 # What to add next
 
-Business Manager · 2026-11-09 · Not requested on the board; my review of `dev` at `5a0ccf4` (Builder Loop v1, guided first day, coin ledger). Advisory only.
+Business Manager · 2026-11-09 · Not requested on the board; my review of `dev` at `0dca68d` (Builder Loop v1, guided first day, coin ledger, lighter task form and Quick log). Advisory only.
 
 **Summary:** the game is good enough to test. What's missing is what brings people back and what tells us if the week-4 test worked.
 
@@ -57,7 +57,7 @@ Business Manager · 2026-11-09 · Not requested on the board; my review of `dev`
 1. **Retention tracking.** Nothing records who comes back; the coin ledger tracks coins, not visits. Add an `activity_events` table (app opened, task completed, collect, by local day) and a weekly report: active days per user and week-1 → week-4 retention. Without it the week-4 test can't answer "keep going?". Highest value, lowest cost.
 2. **One gentle daily reminder.** There are no notifications (no web push, email or installable app), so the app does nothing while it's closed. Make it an installable web app (PWA) with one optional daily push, e.g. "your workers filled the storage". Never guilt-based. Cheaper than finishing the Flutter app.
 3. **An AI resident that works without a GPU.** `server/aiBrain.js` only calls local Ollama, so testers on their own machines get a silent resident. Do the Phase 4 switch to Claude Haiku now, with per-user call caps and a rule-based fallback.
-4. **Account deletion and data export.** Neither exists. Users log money here, so this is about trust before strangers join, and it's required before charging.
+4. **Account deletion and data export.** Neither exists. Users log money here, and the planned fitness tracker adds body and health data, so this is about trust before strangers join, and it's required before charging.
 
 ## Soon after
 5. **A weekly town recap card:** buildings grown, active days, a note from the resident. It helps retention, it's shareable marketing, and it's the natural Meadow Plus feature. Only the Money page has a weekly summary now.
